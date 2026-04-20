@@ -72,8 +72,8 @@ print(">>> 正在初始化大模型和知识库...")
 embeddings = DashScopeEmbeddings(api_key=api_key, model="text-embedding-v2")
 llm = ChatOpenAI(
     model="qwen-plus",
-    api_key=api_key,
-    base_url=base_url,
+    api_key=st.secrets["DASHSCOPE_API_KEY"],
+    base_url=st.secrets.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     temperature=0.3,
     max_tokens=2000
 )
