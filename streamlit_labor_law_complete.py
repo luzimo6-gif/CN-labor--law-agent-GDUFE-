@@ -540,7 +540,13 @@ def create_pure_pdf_report(form_data, result_dict):
     pdf.add_page()
     
     font_loaded = False
-    font_paths = ["simhei.ttf", "C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc"]
+    # 优先加载项目目录下的 msyh.ttf（云端部署用），其次尝试本地系统字体
+    font_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "msyh.ttf"),
+        "msyh.ttf",
+        "C:/Windows/Fonts/msyh.ttf",
+        "C:/Windows/Fonts/simhei.ttf",
+    ]
     for path in font_paths:
         if os.path.exists(path):
             try:
