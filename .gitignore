@@ -15,8 +15,8 @@ __pycache__/
 venv/
 env/
 
-# === 向量数据库（云端会重新生成） ===
-chroma_db/
+# === 向量数据库 ===
+# chroma_db/  # 已放行：上传预构建向量数据库，避免云端 OOM
 chroma_db_labor_law/
 chroma_db_labor_law_complete/
 chroma_db_local_embedding/
