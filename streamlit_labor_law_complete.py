@@ -556,25 +556,30 @@ def create_pure_pdf_report(form_data, result_dict):
     for path in font_paths:
         if os.path.exists(path):
             try:
-                pdf.add_font('Chinese', '', path, uni=True)
-                pdf.add_font('Chinese', 'B', path, uni=True)
+                pdf.add_font('msyh', '', path, uni=True)
                 font_loaded = True
                 break
             except: continue
 
     def safe_print(title, text, is_title=False):
         if font_loaded:
-            pdf.set_font('Chinese', 'B' if is_title else '', 16 if is_title else 11)
+            pdf.set_font('msyh', '', 16 if is_title else 11)
         else:
-            pdf.set_font('Arial', 'B' if is_title else '', 16 if is_title else 11)
+            pdf.set_font('Helvetica', '', 16 if is_title else 11)
             
         if is_title:
             pdf.cell(0, 10, title, ln=1, align='C')
             pdf.ln(5)
         else:
-            pdf.set_font('Chinese' if font_loaded else 'Arial', 'B', 12)
+            if font_loaded:
+                pdf.set_font('msyh', '', 12)
+            else:
+                pdf.set_font('Helvetica', 'B', 12)
             pdf.cell(0, 8, title, ln=1)
-            pdf.set_font('Chinese' if font_loaded else 'Arial', '', 10)
+            if font_loaded:
+                pdf.set_font('msyh', '', 10)
+            else:
+                pdf.set_font('Helvetica', '', 10)
             cleaned_text = strip_markdown(text)
             pdf.multi_cell(0, 6, cleaned_text)
             pdf.ln(6)
@@ -588,6 +593,7 @@ def create_pure_pdf_report(form_data, result_dict):
     
     if not font_loaded:
         pdf.set_text_color(255, 0, 0)
+        pdf.set_font('Helvetica', '', 10)
         pdf.multi_cell(0, 6, "WARNING: Chinese font not found.")
     return bytes(pdf.output())
 
