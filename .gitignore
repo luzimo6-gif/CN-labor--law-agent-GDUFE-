@@ -1,0 +1,40 @@
+# === API Key 和敏感配置 ===
+.env
+.env.local
+.env.production
+users.json
+
+# === Python 缓存 ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# === 虚拟环境 ===
+.venv/
+venv/
+env/
+
+# === 向量数据库（云端会重新生成） ===
+chroma_db/
+chroma_db_labor_law/
+chroma_db_labor_law_complete/
+chroma_db_local_embedding/
+
+# === IDE 和编辑器 ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === 操作系统 ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === uv 锁文件和包管理 ===
+uv.lock
+
+# === 日志和临时文件 ===
+*.log
+tmp/
