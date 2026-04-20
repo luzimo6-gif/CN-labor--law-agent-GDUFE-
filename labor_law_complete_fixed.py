@@ -48,7 +48,8 @@ class DashScopeEmbeddings(Embeddings):
                     "model": self.model,
                     "input": text,
                     "encoding_format": "float"
-                }
+                },
+                verify=False
             )
             if response.status_code == 200:
                 result = response.json()
