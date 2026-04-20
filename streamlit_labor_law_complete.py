@@ -12,7 +12,13 @@ import uuid
 import re
 import json
 import hashlib
+import urllib3
+import warnings
 from datetime import datetime
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings("ignore", module="urllib3")
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 # ==========================================
