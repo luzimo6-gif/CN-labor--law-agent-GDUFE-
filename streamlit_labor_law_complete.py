@@ -808,7 +808,27 @@ with col_panel:
                         app.update_state(config, {"form_data": final_form})
                         final_result = app.invoke(None, config)
                         
-                        st.session_state.analysis_result = final_result
+                        # 稳健提取：兼容不同 LangGraph 版本的返回格式
+                        if isinstance(final_result, dict):
+                            analysis = {
+                                "legal_facts_summary": final_result.get("legal_facts_summary", ""),
+                                "relevant_laws": final_result.get("relevant_laws", ""),
+                                "final_review": final_result.get("final_review", ""),
+                            }
+                        else:
+                            # 如果 invoke 返回的不是 dict，尝试从 get_state 获取
+                            try:
+                                state = app.get_state(config)
+                                state_values = state.values if hasattr(state, 'values') else {}
+                                analysis = {
+                                    "legal_facts_summary": state_values.get("legal_facts_summary", ""),
+                                    "relevant_laws": state_values.get("relevant_laws", ""),
+                                    "final_review": state_values.get("final_review", ""),
+                                }
+                            except:
+                                analysis = {"legal_facts_summary": str(final_result), "relevant_laws": "", "final_review": ""}
+                        
+                        st.session_state.analysis_result = analysis
                         st.session_state.messages = [] 
                         st.session_state.report_generated = True 
                     st.rerun()
