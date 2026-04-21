@@ -805,8 +805,33 @@ with col_panel:
                     
                     with st.spinner("⚖️ 多智能体正在后台进行法条检索与深度推演，请稍候..."):
                         config = {"configurable": {"thread_id": st.session_state.thread_id}}
-                        app.update_state(config, {"form_data": final_form})
-                        final_result = app.invoke(None, config)
+                        
+                        # 检查当前 LangGraph 状态，判断是否已经过 triage 并中断在 fact_summarizer 之前
+                        try:
+                            current_state = app.get_state(config)
+                            next_steps = current_state.next if hasattr(current_state, 'next') else []
+                        except:
+                            next_steps = []
+                        
+                        if next_steps and 'fact_summarizer' in next_steps:
+                            # 正常流程：已通过 triage，从中断点恢复
+                            app.update_state(config, {"form_data": final_form})
+                            final_result = app.invoke(None, config)
+                        else:
+                            # 强制生成：未经过 triage，直接启动完整分析流程
+                            from langchain_core.messages import HumanMessage, SystemMessage
+                            case_msg = HumanMessage(content=f"请分析以下劳动法案件：\n" + "\n".join([f"{k}：{v}" for k, v in final_form.items() if v]))
+                            # 使用新的 thread_id 避免旧状态干扰
+                            new_thread = st.session_state.thread_id + "_direct"
+                            config_direct = {"configurable": {"thread_id": new_thread}}
+                            # 先触发 triage 让它走到 interrupt_before
+                            init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, config_direct)
+                            # 检查 triage 结果，如果是 chat 模式则强制改为 form
+                            triage_res = init_result.get("triage_result", {})
+                            if triage_res.get("action") != "form":
+                                app.update_state(config_direct, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
+                            app.update_state(config_direct, {"form_data": final_form})
+                            final_result = app.invoke(None, config_direct)
                         
                         # 稳健提取：兼容不同 LangGraph 版本的返回格式
                         if isinstance(final_result, dict):
@@ -816,9 +841,9 @@ with col_panel:
                                 "final_review": final_result.get("final_review", ""),
                             }
                         else:
-                            # 如果 invoke 返回的不是 dict，尝试从 get_state 获取
                             try:
-                                state = app.get_state(config)
+                                cfg = config if next_steps and 'fact_summarizer' in next_steps else config_direct
+                                state = app.get_state(cfg)
                                 state_values = state.values if hasattr(state, 'values') else {}
                                 analysis = {
                                     "legal_facts_summary": state_values.get("legal_facts_summary", ""),
