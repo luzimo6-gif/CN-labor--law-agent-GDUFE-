@@ -571,14 +571,14 @@ def create_pure_pdf_report(form_data, result_dict):
             pdf.set_font('Helvetica', '', 16 if is_title else 11)
             
         if is_title:
-            pdf.cell(0, 10, title, ln=1, align='C')
+            pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
             pdf.ln(5)
         else:
             if font_loaded:
                 pdf.set_font('msyh', '', 12)
             else:
                 pdf.set_font('Helvetica', 'B', 12)
-            pdf.cell(0, 8, title, ln=1)
+            pdf.cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
             if font_loaded:
                 pdf.set_font('msyh', '', 10)
             else:
@@ -588,7 +588,7 @@ def create_pure_pdf_report(form_data, result_dict):
             pdf.ln(6)
 
     safe_print("劳动法律深度分析报告", "", is_title=True)
-    info_text = "\n".join([f"• {k}: {v}" for k, v in form_data.items() if v])
+    info_text = "\n".join([f"- {k}: {v}" for k, v in form_data.items() if v])
     safe_print("案件基本信息", info_text)
     safe_print("一、事实梳理", result_dict.get('legal_facts_summary', '无数据'))
     safe_print("二、法条适用分析", result_dict.get('relevant_laws', '无数据'))
