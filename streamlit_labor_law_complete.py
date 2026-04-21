@@ -808,6 +808,12 @@ with col_panel:
                         app.update_state(config, {"form_data": final_form})
                         final_result = app.invoke(None, config)
                         
+                        # 调试：打印实际返回的 key 和值
+                        print(f"[DEBUG] final_result keys: {list(final_result.keys()) if isinstance(final_result, dict) else type(final_result)}")
+                        print(f"[DEBUG] legal_facts_summary: {repr(final_result.get('legal_facts_summary', 'KEY_NOT_FOUND') if isinstance(final_result, dict) else 'NOT_DICT')}")
+                        print(f"[DEBUG] relevant_laws: {repr(final_result.get('relevant_laws', 'KEY_NOT_FOUND') if isinstance(final_result, dict) else 'NOT_DICT')}")
+                        print(f"[DEBUG] final_review: {repr(final_result.get('final_review', 'KEY_NOT_FOUND') if isinstance(final_result, dict) else 'NOT_DICT')}")
+                        
                         st.session_state.analysis_result = final_result
                         st.session_state.messages = [] 
                         st.session_state.report_generated = True 
