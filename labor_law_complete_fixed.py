@@ -205,6 +205,18 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     ai_reply_message = AIMessage(content=triage_result["reply"])
     return {"triage_result": triage_result, "messages": [ai_reply_message]}
 
+def extract_output(text: str) -> str:
+    """提取 <output> 标签内的内容，如果没有标签则原样返回"""
+    import re
+    match = re.search(r'<output>(.*?)</output>', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    # 如果没有 <output> 标签，去掉 <thinking> 部分
+    match = re.search(r'</thinking>(.*)', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
 def fact_summarizer_node(state: LaborLawState) -> LaborLawState:
     form_data = state.get("form_data", {})
     form_text = "\n".join([f"- {k}: {v}" for k, v in form_data.items()])
@@ -212,7 +224,7 @@ def fact_summarizer_node(state: LaborLawState) -> LaborLawState:
     请你必须先在 <thinking> 标签内进行沙盘推演和逻辑自洽检查。
     思考完成后，再在 <output> 标签内梳理：1. 争议焦点 2. 关键时间节点 3. 证据情况分析 4. 法律适用预判"""
     messages = [SystemMessage(content="你是劳动法律师助理"), HumanMessage(content=prompt)]
-    return {"legal_facts_summary": llm.invoke(messages).content}
+    return {"legal_facts_summary": extract_output(llm.invoke(messages).content)}
 
 def legal_researcher_node(state: LaborLawState) -> LaborLawState:
     summary = state.get("legal_facts_summary", "")
@@ -221,7 +233,7 @@ def legal_researcher_node(state: LaborLawState) -> LaborLawState:
     请在 <thinking> 标签内思考：法条是否覆盖诉求？有没有冲突？
     思考后在 <output> 标签输出：1. 适用条款 2. 适用说明 3. 赔偿计算依据 4. 程序性建议"""
     messages = [SystemMessage(content="你是专业律师"), HumanMessage(content=prompt)]
-    return {"relevant_laws": llm.invoke(messages).content}
+    return {"relevant_laws": extract_output(llm.invoke(messages).content)}
 
 def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
     facts = state.get("legal_facts_summary", "")
@@ -231,7 +243,7 @@ def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
     请在 <thinking> 标签内审视前置分析有无漏洞。
     思考后在 <output> 标签提供：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"""
     messages = [SystemMessage(content="你是资深专家"), HumanMessage(content=prompt)]
-    return {"final_review": llm.invoke(messages).content}
+    return {"final_review": extract_output(llm.invoke(messages).content)}
 
 # ==========================================
 # 6. 构建 LangGraph 工作流
