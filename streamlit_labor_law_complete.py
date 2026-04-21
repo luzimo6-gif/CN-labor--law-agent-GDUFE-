@@ -546,20 +546,23 @@ def create_pure_pdf_report(form_data, result_dict):
     pdf.add_page()
     
     font_loaded = False
-    # 优先加载项目目录下的 msyh.ttf（云端部署用），其次尝试本地系统字体
+    # 优先加载项目目录下的 simhei.ttf（云端部署用），其次尝试本地系统字体
     font_paths = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "msyh.ttf"),
-        "msyh.ttf",
-        "C:/Windows/Fonts/msyh.ttf",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
+        "simhei.ttf",
         "C:/Windows/Fonts/simhei.ttf",
     ]
     for path in font_paths:
         if os.path.exists(path):
             try:
-                pdf.add_font('msyh', '', path, uni=True)
+                pdf.add_font('msyh', '', path)
                 font_loaded = True
                 break
-            except: continue
+            except Exception as e:
+                print(f"[PDF字体] 加载 {path} 失败: {e}")
+
+    if not font_loaded:
+        print("[PDF字体] 未找到任何中文字体，PDF中文将无法正常显示")
 
     def safe_print(title, text, is_title=False):
         if font_loaded:
