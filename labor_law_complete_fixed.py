@@ -81,7 +81,7 @@ llm = ChatOpenAI(
 # ==========================================
 # 3. 初始化 RAG 知识库
 # ==========================================
-persist_dir = "./chroma_db_labor_law_complete"
+persist_dir = "./chroma_db"
 if os.path.exists(persist_dir):
     vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
 else:
