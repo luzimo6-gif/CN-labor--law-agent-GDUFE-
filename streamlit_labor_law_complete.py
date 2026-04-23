@@ -455,11 +455,23 @@ with col_chat:
         with tool_col1:
             mode_label = "⚡ 普法模式 ⌄" if st.session_state.ai_mode == "QUICK" else "💼 案件模式 ⌄"
             with st.popover(mode_label, use_container_width=True):
-                selected_mode = st.radio("Mode", options=["⚡ 普法模式", "💼 案件模式"], index=0 if st.session_state.ai_mode == "QUICK" else 1, label_visibility="collapsed")
+                st.markdown("**AI 模型选择**")
+                selected_mode = st.radio(
+                    "Mode",
+                    options=["⚡ 普法模式", "💼 案件模式"],
+                    captions=["快速回答常见普法问题", "使用多智能体进行深度案情推演"],
+                    index=0 if st.session_state.ai_mode == "QUICK" else 1,
+                    label_visibility="collapsed"
+                )
                 new_mode = "QUICK" if "普法" in selected_mode else "PRO"
                 if new_mode != st.session_state.ai_mode:
                     st.session_state.ai_mode = new_mode
                     st.rerun()
+
+        with tool_col2:
+            with st.popover("📎 附件", use_container_width=True):
+                st.file_uploader("上传劳动合同、打卡记录等", type=["pdf", "png", "jpg"], accept_multiple_files=True)
+                st.caption("视觉解析能力即将上线...")
 
         # 聊天输入框及提交逻辑
         if prompt := st.chat_input("描述您的遭遇或提出疑问..."):
