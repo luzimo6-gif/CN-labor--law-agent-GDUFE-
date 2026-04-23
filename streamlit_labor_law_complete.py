@@ -281,25 +281,94 @@ st.markdown("""
     .developer-info a { color: #64748b; text-decoration: none; font-weight: 500; }
     .developer-info a:hover { color: #3b82f6; }
 
+    /* 桌面端/移动端文案切换 */
+    .mobile-hint { display: none; }
+    .desktop-hint { display: inline; }
+    
     /* ========================================================= */
     /* 移动端适配 (响应式) */
     /* ========================================================= */
     @media (max-width: 768px) {
-        .chat-title { font-size: 1.8rem; }
+        .chat-title { font-size: 1.6rem !important; }
+        .chat-subtitle { font-size: 0.85rem !important; }
+        .mobile-hint { display: inline !important; }
+        .desktop-hint { display: none !important; }
         
+        /* 面板：自适应高度，取消固定80vh */
         .panel-container { 
             height: auto !important; 
             max-height: none !important;
-            min-height: 50vh;
+            min-height: auto !important;
             margin-top: 20px;
+            padding: 18px !important;
+            border-radius: 14px !important;
         }
         
+        /* 报告预览区 */
+        .report-preview-box {
+            padding: 20px 16px !important;
+            font-size: 0.88rem !important;
+        }
+        
+        /* Popover 按钮紧凑化 */
         div[data-testid="stPopover"] > button {
             padding: 4px 12px !important; 
-            font-size: 0.9rem !important;
+            font-size: 0.85rem !important;
         }
         
-        .legal-watermark { left: 50%; width: 80vw; } /* 手机端天平居中 */
+        /* 天平水印居中 */
+        .legal-watermark { left: 50%; width: 80vw; opacity: 0.04 !important; }
+        
+        /* 开发者标签缩小 */
+        .developer-info {
+            font-size: 0.7rem !important;
+            padding: 3px 10px !important;
+            top: 8px !important;
+            right: 10px !important;
+        }
+        
+        /* 聊天输入框 */
+        .stChatInputContainer {
+            border-radius: 16px !important;
+        }
+        
+        /* 登录页标题 */
+        h1[style] { font-size: 1.5rem !important; }
+    }
+    
+    /* 手机端双列变上下堆叠：强制 Streamlit 列竖排 */
+    @media (max-width: 768px) {
+        div[data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 0 0 100% !important;
+            max-width: 100% !important;
+        }
+        div[data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0px !important;
+        }
+    }
+    
+    /* 超小屏幕（<480px）进一步优化 */
+    @media (max-width: 480px) {
+        .chat-title { font-size: 1.3rem !important; }
+        .chat-subtitle { font-size: 0.8rem !important; }
+        
+        .panel-container {
+            padding: 14px !important;
+            border-radius: 10px !important;
+        }
+        
+        .panel-header { font-size: 1rem !important; }
+        
+        button[kind="primary"] {
+            padding: 0.4rem 0.8rem !important;
+            font-size: 0.88rem !important;
+        }
+        
+        .developer-info { display: none !important; }
+        
+        .legal-watermark { display: none !important; }
     }
 </style>
 
@@ -382,8 +451,8 @@ if 'login_tab' not in st.session_state:
     st.session_state.login_tab = "login"
 
 if not st.session_state.authenticated:
-    # 登录页居中布局
-    _, login_col, _ = st.columns([3, 4, 3])
+    # 登录页居中布局（移动端用更窄的列）
+    _, login_col, _ = st.columns([1, 3, 1])
     
     with login_col:
         st.markdown("""
@@ -625,7 +694,7 @@ with st.sidebar:
 # 5. 主页面布局
 # ==========================================
 st.markdown('<h1 class="chat-title">AI 劳动法</h1>', unsafe_allow_html=True)
-st.markdown('<p class="chat-subtitle">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</p>', unsafe_allow_html=True)
+st.markdown('<p class="chat-subtitle"><span class="desktop-hint">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</span><span class="mobile-hint">沟通案情后下滑查看卷宗面板。生成报告后对话将自动销毁。</span></p>', unsafe_allow_html=True)
 
 col_chat, col_panel = st.columns([6, 4], gap="large")
 
@@ -636,7 +705,7 @@ with col_chat:
 
     if st.session_state.report_generated:
         st.success("✅ 深度分析已完成！出于隐私保护，对话记录已自动焚毁。")
-        st.info("👉 请在右侧面板预览并下载您的分析报告。")
+        st.markdown('<span class="desktop-hint">👉 请在右侧面板预览并下载您的分析报告。</span><span class="mobile-hint">👉 请下滑预览并下载您的分析报告。</span>', unsafe_allow_html=True)
     else:
         if not st.session_state.messages:
             with st.chat_message("assistant"):
