@@ -338,28 +338,25 @@ if 'ai_mode' not in st.session_state:
 # 3. 辅助函数与解析逻辑 (🌟 核心修复区)
 # ==========================================
 def parse_ai_message(text):
-    """专门解析 AI 消息，将思考过程与最终输出剥离，并彻底清理 JSON 外泄代码"""
+    """解析包含 <thinking> 标签的AI回复，彻底剥离思考过程与最终输出，并强力清洗 JSON 外泄"""
     thinking = ""
     output = text
     
-    # 1. 剥离思考标签
+    # 1. 提取思考过程
     if "<thinking>" in text:
         parts = text.split("</thinking>")
-        if len(parts) > 1:
-            thinking = parts[0].replace("<thinking>", "").strip()
-            output = parts[1].strip()
-        else:
-            thinking = parts[0].replace("<thinking>", "").strip()
-            output = ""
-            
-    # 2. 暴力清洗前端 JSON 外泄 (例如 {"action": "chat", "reply": "解答内容"}...)
+        thinking = parts[0].replace("<thinking>", "").strip()
+        output = parts[1].strip() if len(parts) > 1 else ""
+    
+    # 2. 强力清洗输出正文中的 JSON 外壳
     output = output.strip()
-    json_match = re.match(r'^\{[\s\S]*?"action"[\s\S]*?"reply"\s*:\s*"([^"]*)"[\s\S]*?\}\s*(.*)', output)
+    json_match = re.search(r'"reply"\s*:\s*"([^"]+)"', output)
     if json_match:
-        json_reply = json_match.group(1)
-        trailing_text = json_match.group(2)
-        # 优先保留 LLM 重复生成的净文本，如果没有则使用提取出的 JSON 内部 reply
-        output = trailing_text if trailing_text else json_reply
+        output = json_match.group(1).replace('\\n', '\n')
+    else:
+        output = re.sub(r'^```json\s*', '', output)
+        output = re.sub(r'```$', '', output).strip()
+        output = re.sub(r'^\{[\s\S]*?\}\s*', '', output).strip()
 
     return thinking, output
 
@@ -473,8 +470,9 @@ with col_chat:
                 st.write(prompt)
                 
             with st.chat_message("assistant"):
-                # 🌟 占位符设计：保证排版绝对稳定
-                thinking_container = st.empty()
+                # 1. 明确分离两个占位容器：思考状态框 + 正文框
+                thinking_status = st.status("⚖️ AI 正在思考推演...", expanded=False)
+                thinking_placeholder = thinking_status.empty()
                 response_placeholder = st.empty()
                 
                 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -486,6 +484,7 @@ with col_chat:
                     backend_msg = user_msg_ui
                 
                 full_response = ""
+                thinking_text = ""
                 try:
                     for event in app.stream({"messages": [backend_msg]}, config, stream_mode="messages"):
                         msg = event[0] if isinstance(event, tuple) else event
@@ -493,28 +492,22 @@ with col_chat:
                             full_response += msg.content
                             thinking_text, clean_response = parse_ai_message(full_response)
                             
-                            # 动态更新折叠框内容 (保持闭合状态，但内部文本实时刷新)
+                            # 动态更新思考框
                             if thinking_text:
-                                with thinking_container.container():
-                                    with st.expander("⚖️ 正在思考...", expanded=False):
-                                        st.markdown(thinking_text)
+                                thinking_placeholder.markdown(thinking_text)
                             
-                            # 动态更新回答内容
+                            # 动态更新外部的正文框
                             if clean_response:
                                 response_placeholder.markdown(clean_response)
                     
-                    # 循环结束后，将思考框标题切为"已完成"
-                    if thinking_text:
-                        thinking_container.empty()
-                        with thinking_container.container():
-                            with st.expander("✅ 已完成思考", expanded=False):
-                                st.markdown(thinking_text)
+                    # 流式结束后，关闭思考状态框
+                    thinking_status.update(label="✅ 已完成思考", state="complete", expanded=False)
                                 
                     if full_response.strip():
                         st.session_state.messages.append(AIMessage(content=full_response.strip()))
                 
                 except Exception as e:
-                    thinking_container.empty()
+                    thinking_status.update(label="⚠️ 出错了", state="error", expanded=False)
                     err_msg = "抱歉，服务暂时不可用，请稍后再试。"
                     response_placeholder.markdown(err_msg)
                     st.session_state.messages.append(AIMessage(content=err_msg))
