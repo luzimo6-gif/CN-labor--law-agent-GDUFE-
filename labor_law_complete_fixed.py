@@ -5,6 +5,8 @@
 """
 
 import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import sys
 import json
 import streamlit as st
