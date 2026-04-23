@@ -5,9 +5,11 @@
 联系方式：1452723426@qq.com
 """
 
+import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import streamlit as st
 import sys
-import os
 import uuid
 import re
 import json
@@ -281,63 +283,27 @@ st.markdown("""
     .developer-info a { color: #64748b; text-decoration: none; font-weight: 500; }
     .developer-info a:hover { color: #3b82f6; }
 
-    /* 桌面端/移动端文案切换 */
-    .mobile-hint { display: none; }
-    .desktop-hint { display: inline; }
-    
     /* ========================================================= */
     /* 移动端适配 (响应式) */
     /* ========================================================= */
     @media (max-width: 768px) {
-        .chat-title { font-size: 1.6rem !important; }
-        .chat-subtitle { font-size: 0.85rem !important; }
-        .mobile-hint { display: inline !important; }
-        .desktop-hint { display: none !important; }
+        .chat-title { font-size: 1.8rem; }
         
-        /* 面板：自适应高度，取消固定80vh */
         .panel-container { 
             height: auto !important; 
             max-height: none !important;
-            min-height: auto !important;
+            min-height: 50vh;
             margin-top: 20px;
-            padding: 18px !important;
-            border-radius: 14px !important;
         }
         
-        /* 报告预览区 */
-        .report-preview-box {
-            padding: 20px 16px !important;
-            font-size: 0.88rem !important;
-        }
-        
-        /* Popover 按钮紧凑化 */
         div[data-testid="stPopover"] > button {
             padding: 4px 12px !important; 
-            font-size: 0.85rem !important;
+            font-size: 0.9rem !important;
         }
         
-        /* 天平水印居中 */
-        .legal-watermark { left: 50%; width: 80vw; opacity: 0.04 !important; }
+        .legal-watermark { left: 50%; width: 80vw; } /* 手机端天平居中 */
         
-        /* 开发者标签缩小 */
-        .developer-info {
-            font-size: 0.7rem !important;
-            padding: 3px 10px !important;
-            top: 8px !important;
-            right: 10px !important;
-        }
-        
-        /* 聊天输入框 */
-        .stChatInputContainer {
-            border-radius: 16px !important;
-        }
-        
-        /* 登录页标题 */
-        h1[style] { font-size: 1.5rem !important; }
-    }
-    
-    /* 手机端双列变上下堆叠：强制 Streamlit 列竖排 */
-    @media (max-width: 768px) {
+        /* 核心修复：强制 st.columns 在移动端纵向堆叠 */
         div[data-testid="stColumn"] {
             width: 100% !important;
             flex: 0 0 100% !important;
@@ -345,30 +311,37 @@ st.markdown("""
         }
         div[data-testid="stHorizontalBlock"] {
             flex-direction: column !important;
-            gap: 0px !important;
+            gap: 1rem !important;
+        }
+        
+        /* 手机端隐藏开发者信息 */
+        .developer-info { display: none !important; }
+        
+        /* 手机端隐藏天平水印（节省屏幕空间） */
+        .legal-watermark { display: none !important; }
+        
+        /* 报告预览框适配小屏 */
+        .report-preview-box { padding: 20px 15px; }
+        
+        /* 按钮增大触控区域 */
+        button[kind="primary"], button[kind="secondary"] {
+            min-height: 44px !important;
+            font-size: 1rem !important;
         }
     }
     
-    /* 超小屏幕（<480px）进一步优化 */
     @media (max-width: 480px) {
-        .chat-title { font-size: 1.3rem !important; }
-        .chat-subtitle { font-size: 0.8rem !important; }
+        .chat-title { font-size: 1.4rem; }
+        .chat-subtitle { font-size: 0.85rem; }
         
-        .panel-container {
-            padding: 14px !important;
-            border-radius: 10px !important;
-        }
+        /* 登录页缩小 */
+        h1 { font-size: 1.5rem !important; }
         
-        .panel-header { font-size: 1rem !important; }
+        /* 面板内边距进一步缩小 */
+        .panel-container { padding: 16px; border-radius: 14px; }
         
-        button[kind="primary"] {
-            padding: 0.4rem 0.8rem !important;
-            font-size: 0.88rem !important;
-        }
-        
-        .developer-info { display: none !important; }
-        
-        .legal-watermark { display: none !important; }
+        /* 聊天输入框圆角适配 */
+        .stChatInputContainer { border-radius: 18px !important; }
     }
 </style>
 
@@ -451,8 +424,8 @@ if 'login_tab' not in st.session_state:
     st.session_state.login_tab = "login"
 
 if not st.session_state.authenticated:
-    # 登录页居中布局（移动端用更窄的列）
-    _, login_col, _ = st.columns([1, 3, 1])
+    # 登录页居中布局
+    _, login_col, _ = st.columns([3, 4, 3])
     
     with login_col:
         st.markdown("""
@@ -573,7 +546,7 @@ if 'thread_id' not in st.session_state:
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'form_data' not in st.session_state:
-    st.session_state.form_data = {"单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
+    st.session_state.form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
 if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
 if 'ready_for_analysis' not in st.session_state:
@@ -586,13 +559,30 @@ if 'ai_mode' not in st.session_state:
 # ==========================================
 # 3. 辅助函数
 # ==========================================
+def parse_ai_message(text):
+    """解析包含 <thinking> 标签的AI回复，剥离思考过程与最终输出"""
+    thinking = ""
+    output = text
+    if "<thinking>" in text:
+        parts = text.split("</thinking>")
+        if len(parts) > 1:
+            thinking = parts[0].replace("<thinking>", "").strip()
+            output = parts[1].strip()
+        else:
+            thinking = parts[0].replace("<thinking>", "").strip()
+            output = ""
+    
+    # 过滤掉偶尔出现的 JSON 结构化残留字符串
+    output = re.sub(r'^<\{[^}]+\}[^{]*', '', output).strip()
+    return thinking, output
+
 def extract_info_silently(chat_history, current_data):
     if not chat_history: return current_data
     prompt = f"""你是一个后台数据提取器。请阅读最新的【聊天记录】，提取关键信息并更新【当前数据】。
     没提到的保持空字符串 ""。
     【当前数据】：{json.dumps(current_data, ensure_ascii=False)}
     【最近对话】：{[{'role': 'user' if isinstance(m, HumanMessage) else 'ai', 'content': m.content} for m in chat_history[-4:]]}
-    请严格返回包含这5个键的JSON："单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。"""
+    请严格返回包含这6个键的JSON："案件发生地", "单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。(案件发生地请提取具体的城市或省份)"""
     try:
         response = llm.invoke([SystemMessage(content="只输出合法JSON"), HumanMessage(content=prompt)])
         clean_json = response.content.replace('```json', '').replace('```', '').strip()
@@ -684,28 +674,33 @@ with st.sidebar:
     if st.button("🔄 彻底重置并开启新案", type="primary", use_container_width=True):
         st.session_state.thread_id = f"user-{uuid.uuid4().hex[:8]}"
         st.session_state.messages = []
-        st.session_state.form_data = {"单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
+        st.session_state.form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
         st.session_state.analysis_result = None
         st.session_state.ready_for_analysis = False
         st.session_state.report_generated = False
         st.rerun()
 
 # ==========================================
-# 5. 主页面布局
+# 5. 主页面布局：根据模式动态切换右侧栏显示
 # ==========================================
 st.markdown('<h1 class="chat-title">AI 劳动法</h1>', unsafe_allow_html=True)
-st.markdown('<p class="chat-subtitle"><span class="desktop-hint">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</span><span class="mobile-hint">沟通案情后下滑查看卷宗面板。生成报告后对话将自动销毁。</span></p>', unsafe_allow_html=True)
+st.markdown('<p class="chat-subtitle">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</p>', unsafe_allow_html=True)
 
-col_chat, col_panel = st.columns([6, 4], gap="large")
+# 核心优化：普法模式隐藏右侧面板，让对话框拉满全宽
+if st.session_state.ai_mode == "PRO":
+    col_chat, col_panel = st.columns([6, 4], gap="large")
+else:
+    col_chat = st.container()
+    col_panel = None
 
 # ------------------------------------------
-# 左侧：聊天面板
+# 左侧/主体：聊天面板
 # ------------------------------------------
 with col_chat:
 
     if st.session_state.report_generated:
         st.success("✅ 深度分析已完成！出于隐私保护，对话记录已自动焚毁。")
-        st.markdown('<span class="desktop-hint">👉 请在右侧面板预览并下载您的分析报告。</span><span class="mobile-hint">👉 请下滑预览并下载您的分析报告。</span>', unsafe_allow_html=True)
+        st.info("👉 请在右侧面板预览并下载您的分析报告。")
     else:
         if not st.session_state.messages:
             with st.chat_message("assistant"):
@@ -714,11 +709,20 @@ with col_chat:
                 else:
                     st.write("您好！我是您的 **快速普法助手**。有关劳动法的任何法规疑问，我都会快速为您解答。")
 
-        # 渲染历史聊天
+        # 渲染历史聊天 (搭载豆包式思考折叠)
         for msg in st.session_state.messages:
             role = "user" if isinstance(msg, HumanMessage) else "assistant"
             with st.chat_message(role):
-                st.write(msg.content)
+                if role == "assistant":
+                    thinking, output = parse_ai_message(msg.content)
+                    if thinking:
+                        # 历史消息中的思考默认折叠
+                        with st.expander("✅ 已完成思考", expanded=False):
+                            st.markdown(thinking)
+                    if output:
+                        st.markdown(output)
+                else:
+                    st.write(msg.content)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -757,174 +761,213 @@ with col_chat:
                 st.write(prompt)
                 
             with st.chat_message("assistant"):
-                with st.spinner("AI 正在思考..."):
-                    config = {"configurable": {"thread_id": st.session_state.thread_id}}
-                    
-                    # 🌟 2. 前端静默注入黑科技
-                    if st.session_state.ai_mode == "QUICK":
-                        injected_prompt = f"【系统前置绝对指令：当前处于快速普法模式。请直接以专业律师口吻回答该问题，绝对不要试图收集案卷要素，也不要提示用户看右侧表单。】\n用户：{prompt}"
-                        backend_msg = HumanMessage(content=injected_prompt)
-                    else:
-                        backend_msg = user_msg_ui
-                    
-                    # 仅发送构造好的单条消息给后端
-                    result = app.invoke({"messages": [backend_msg]}, config)
-                    
-                    # 提取后端回复上屏
-                    latest_messages = result.get("messages", [])
-                    if latest_messages:
-                        st.session_state.messages.append(latest_messages[-1])
-                    
-                    # 3. 只有 PRO 模式才会触发右侧卷宗系统的联动
-                    if st.session_state.ai_mode == "PRO":
-                        action = result.get("triage_result", {}).get("action", "chat")
-                        if action == "form":
-                            st.session_state.ready_for_analysis = True
-                            st.toast("🎯 核心信息已收集完毕！请查看右侧面板。", icon="✅")
+                # 流式处理容器
+                status_container = st.status("⚖️ AI 正在分析...", expanded=False)
+                
+                config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                
+                # 🌟 2. 前端静默注入黑科技
+                if st.session_state.ai_mode == "QUICK":
+                    injected_prompt = f"【系统前置绝对指令：当前处于快速普法模式。请直接以专业律师口吻回答该问题，绝对不要试图收集案卷要素，也不要提示用户看右侧表单。】\n用户：{prompt}"
+                    backend_msg = HumanMessage(content=injected_prompt)
+                else:
+                    backend_msg = user_msg_ui
+                
+                full_response = ""
+                thinking_text = ""
+                
+                try:
+                    # 使用流式调用
+                    for event in app.stream({"messages": [backend_msg]}, config, stream_mode="messages"):
+                        if isinstance(event, tuple):
+                            msg, _ = event
                         else:
-                            st.session_state.ready_for_analysis = False
+                            msg = event
                         
-                        # 触发静默提取，自动填写右侧表格
-                        updated_data = extract_info_silently(st.session_state.messages, st.session_state.form_data)
-                        st.session_state.form_data = updated_data
+                        if hasattr(msg, 'content') and msg.content:
+                            full_response += msg.content
+                    
+                    # 处理完毕，折叠状态框
+                    status_container.update(label="分析完成", state="complete", expanded=False)
+                    
+                    # 分离思考和回复
+                    thinking_text, clean_response = parse_ai_message(full_response)
+                    
+                    # 构建最终显示：回复 + 可折叠的思考过程
+                    if clean_response:
+                        st.markdown(clean_response)
+                    
+                    # 思考内容放入可折叠框
+                    if thinking_text:
+                        with st.expander("💭 查看 AI 思考过程", expanded=False):
+                            st.markdown(thinking_text)
+                    
+                    # 保存完整消息（包含thinking）
+                    if full_response.strip():
+                        ai_msg = AIMessage(content=full_response.strip())
+                        st.session_state.messages.append(ai_msg)
+                
+                except Exception as e:
+                    status_container.update(state="error", label=f"⚠️ 出错了: {str(e)}")
+                    err_msg = "抱歉，服务暂时不可用，请稍后再试。"
+                    st.markdown(err_msg)
+                    st.session_state.messages.append(AIMessage(content=err_msg))
+                
+                # 3. 只有 PRO 模式才会触发右侧卷宗系统的联动
+                if st.session_state.ai_mode == "PRO":
+                    # 获取最终状态
+                    final_state = app.get_state(config)
+                    action = final_state.values.get("triage_result", {}).get("action", "chat")
+                    
+                    if action == "form":
+                        st.session_state.ready_for_analysis = True
+                        st.toast("🎯 核心信息已收集完毕！请查看右侧面板。", icon="✅")
                     else:
-                        # 快速模式下，永远不提示收集完毕
                         st.session_state.ready_for_analysis = False
+                    
+                    # 触发静默提取，自动填写右侧表格
+                    updated_data = extract_info_silently(st.session_state.messages, st.session_state.form_data)
+                    st.session_state.form_data = updated_data
+                else:
+                    # 快速模式下，永远不提示收集完毕
+                    st.session_state.ready_for_analysis = False
                     
             st.rerun()
 
 # ------------------------------------------
 # 右侧：卷宗面板 & 沉浸式报告预览
 # ------------------------------------------
-with col_panel:
-    panel_class = "panel-container highlight-border" if st.session_state.ready_for_analysis else "panel-container"
-    st.markdown(f'<div class="{panel_class}">', unsafe_allow_html=True)
-    
-    if st.session_state.report_generated and st.session_state.analysis_result:
-        # --- 纸质感报告预览区 ---
-        st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
+if col_panel is not None:
+    with col_panel:
+        panel_class = "panel-container highlight-border" if st.session_state.ready_for_analysis else "panel-container"
+        st.markdown(f'<div class="{panel_class}">', unsafe_allow_html=True)
         
-        pdf_bytes = create_pure_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
-        st.download_button(
-            label="📥 下载 PDF 格式正式报告",
-            data=pdf_bytes,
-            file_name=f"劳动法分析报告_{datetime.now().strftime('%Y%m%d%H%M')}.pdf",
-            mime="application/pdf",
-            type="primary",
-            use_container_width=True
-        )
-        
-        facts = strip_markdown(st.session_state.analysis_result.get('legal_facts_summary', '无数据'))
-        laws = strip_markdown(st.session_state.analysis_result.get('relevant_laws', '无数据'))
-        advice = strip_markdown(st.session_state.analysis_result.get('final_review', '无数据'))
-        
-        preview_html = f"""
-        <div class="report-preview-box">
-            <h3 style="text-align:center; color:#1e3a8a; margin-bottom: 20px;">劳动法律深度分析报告</h3>
-            <h4>一、事实梳理</h4>
-            <p>{facts.replace(chr(10), '<br>')}</p>
-            <h4>二、法条适用分析</h4>
-            <p>{laws.replace(chr(10), '<br>')}</p>
-            <h4>三、最终合规建议</h4>
-            <p>{advice.replace(chr(10), '<br>')}</p>
-        </div>
-        """
-        st.markdown(preview_html, unsafe_allow_html=True)
-        
-    else:
-        # --- 卷宗收集区 ---
-        st.markdown('<div class="panel-header">📑 智能案件卷宗</div>', unsafe_allow_html=True)
-        
-        if st.session_state.ai_mode == "QUICK":
-            st.info("⚡ 当前为**普法模式**，AI 只负责快速解答法律疑问，不收集案件卷宗。如需出具正式案件报告，请在聊天框上方切换至「案件模式」。")
+        if st.session_state.report_generated and st.session_state.analysis_result:
+            # --- 纸质感报告预览区 ---
+            st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
             
-        elif st.session_state.ai_mode == "PRO":
-            # 🎯 空状态 (Empty State) 优化逻辑
-            is_empty = all(v == "" for v in st.session_state.form_data.values())
+            pdf_bytes = create_pure_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
+            st.download_button(
+                label="📥 下载 PDF 格式正式报告",
+                data=pdf_bytes,
+                file_name=f"劳动法分析报告_{datetime.now().strftime('%Y%m%d%H%M')}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
             
-            if st.session_state.ready_for_analysis:
-                st.success("✅ AI 认为信息已充足，请核对下方数据并生成报告。")
-            elif is_empty:
-                st.info("👋 **卷宗目前为空。**\n\n请在左侧向我描述您的案情，我会自动为您提取并填写此处的关键信息。")
-            else:
-                st.caption("左侧沟通时，AI 会自动为您更新下方信息。您也可随时手动修正。")
+            facts = strip_markdown(st.session_state.analysis_result.get('legal_facts_summary', '无数据'))
+            laws = strip_markdown(st.session_state.analysis_result.get('relevant_laws', '无数据'))
+            advice = strip_markdown(st.session_state.analysis_result.get('final_review', '无数据'))
             
-        with st.form("case_confirmation_form", border=False):
-            # 快速模式下锁定所有输入框
-            disabled_status = st.session_state.ai_mode == "QUICK"
+            preview_html = f"""
+            <div class="report-preview-box">
+                <h3 style="text-align:center; color:#1e3a8a; margin-bottom: 20px;">劳动法律深度分析报告</h3>
+                <h4>一、事实梳理</h4>
+                <p>{facts.replace(chr(10), '<br>')}</p>
+                <h4>二、法条适用分析</h4>
+                <p>{laws.replace(chr(10), '<br>')}</p>
+                <h4>三、最终合规建议</h4>
+                <p>{advice.replace(chr(10), '<br>')}</p>
+            </div>
+            """
+            st.markdown(preview_html, unsafe_allow_html=True)
             
-            f_company = st.text_input("涉事单位名称", value=st.session_state.form_data.get("单位名称", ""), disabled=disabled_status)
-            f_salary = st.text_input("平均月薪", value=st.session_state.form_data.get("平均月薪", ""), disabled=disabled_status)
-            f_date = st.text_input("时间节点", value=st.session_state.form_data.get("时间节点", ""), disabled=disabled_status)
-            f_demand = st.text_input("核心诉求", value=st.session_state.form_data.get("核心诉求", ""), disabled=disabled_status)
-            f_details = st.text_area("详细经过与证据", value=st.session_state.form_data.get("详细经过", ""), height=150, disabled=disabled_status)
+        else:
+            # --- 卷宗收集区 ---
+            st.markdown('<div class="panel-header">📑 智能案件卷宗</div>', unsafe_allow_html=True)
             
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            if st.session_state.ai_mode == "PRO":
-                btn_type = "primary" if st.session_state.ready_for_analysis else "secondary"
-                btn_text = "✅ 卷宗确认无误，生成法律分析报告" if st.session_state.ready_for_analysis else "强制跳过收集，直接生成报告"
+            if st.session_state.ai_mode == "QUICK":
+                st.info("⚡ 当前为**普法模式**，AI 只负责快速解答法律疑问，不收集案件卷宗。如需出具正式案件报告，请在聊天框上方切换至「案件模式」。")
                 
-                if st.form_submit_button(btn_text, type=btn_type, use_container_width=True):
-                    final_form = {
-                        "单位名称": f_company, "平均月薪": f_salary, "时间节点": f_date, 
-                        "核心诉求": f_demand, "详细经过": f_details
-                    }
-                    st.session_state.form_data = final_form
+            elif st.session_state.ai_mode == "PRO":
+                # 🎯 空状态 (Empty State) 优化逻辑
+                is_empty = all(v == "" for v in st.session_state.form_data.values())
+                
+                if st.session_state.ready_for_analysis:
+                    st.success("✅ AI 认为信息已充足，请核对下方数据并生成报告。")
+                elif is_empty:
+                    st.info("👋 **卷宗目前为空。**\n\n请在左侧向我描述您的案情，我会自动为您提取并填写此处的关键信息。")
+                else:
+                    st.caption("左侧沟通时，AI 会自动为您更新下方信息。您也可随时手动修正。")
+                
+            with st.form("case_confirmation_form", border=False):
+                # 快速模式下锁定所有输入框
+                disabled_status = st.session_state.ai_mode == "QUICK"
+                
+                f_region = st.text_input("案件发生地", value=st.session_state.form_data.get("案件发生地", ""), disabled=disabled_status)
+                f_company = st.text_input("涉事单位名称", value=st.session_state.form_data.get("单位名称", ""), disabled=disabled_status)
+                f_salary = st.text_input("平均月薪", value=st.session_state.form_data.get("平均月薪", ""), disabled=disabled_status)
+                f_date = st.text_input("时间节点", value=st.session_state.form_data.get("时间节点", ""), disabled=disabled_status)
+                f_demand = st.text_input("核心诉求", value=st.session_state.form_data.get("核心诉求", ""), disabled=disabled_status)
+                f_details = st.text_area("详细经过与证据", value=st.session_state.form_data.get("详细经过", ""), height=150, disabled=disabled_status)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if st.session_state.ai_mode == "PRO":
+                    btn_type = "primary" if st.session_state.ready_for_analysis else "secondary"
+                    btn_text = "✅ 卷宗确认无误，生成法律分析报告" if st.session_state.ready_for_analysis else "强制跳过收集，直接生成报告"
                     
-                    with st.spinner("⚖️ 多智能体正在后台进行法条检索与深度推演，请稍候..."):
-                        config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                    if st.form_submit_button(btn_text, type=btn_type, use_container_width=True):
+                        final_form = {
+                            "案件发生地": f_region, "单位名称": f_company, "平均月薪": f_salary, 
+                            "时间节点": f_date, "核心诉求": f_demand, "详细经过": f_details
+                        }
+                        st.session_state.form_data = final_form
                         
-                        # 检查当前 LangGraph 状态，判断是否已经过 triage 并中断在 fact_summarizer 之前
-                        try:
-                            current_state = app.get_state(config)
-                            next_steps = current_state.next if hasattr(current_state, 'next') else []
-                        except:
-                            next_steps = []
-                        
-                        if next_steps and 'fact_summarizer' in next_steps:
-                            # 正常流程：已通过 triage，从中断点恢复
-                            app.update_state(config, {"form_data": final_form})
-                            final_result = app.invoke(None, config)
-                        else:
-                            # 强制生成：未经过 triage，直接启动完整分析流程
-                            from langchain_core.messages import HumanMessage, SystemMessage
-                            case_msg = HumanMessage(content=f"请分析以下劳动法案件：\n" + "\n".join([f"{k}：{v}" for k, v in final_form.items() if v]))
-                            # 使用新的 thread_id 避免旧状态干扰
-                            new_thread = st.session_state.thread_id + "_direct"
-                            config_direct = {"configurable": {"thread_id": new_thread}}
-                            # 先触发 triage 让它走到 interrupt_before
-                            init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, config_direct)
-                            # 检查 triage 结果，如果是 chat 模式则强制改为 form
-                            triage_res = init_result.get("triage_result", {})
-                            if triage_res.get("action") != "form":
-                                app.update_state(config_direct, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
-                            app.update_state(config_direct, {"form_data": final_form})
-                            final_result = app.invoke(None, config_direct)
-                        
-                        # 稳健提取：兼容不同 LangGraph 版本的返回格式
-                        if isinstance(final_result, dict):
-                            analysis = {
-                                "legal_facts_summary": final_result.get("legal_facts_summary", ""),
-                                "relevant_laws": final_result.get("relevant_laws", ""),
-                                "final_review": final_result.get("final_review", ""),
-                            }
-                        else:
+                        with st.spinner("⚖️ 多智能体正在后台进行法条检索与深度推演，请稍候..."):
+                            config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                            
+                            # 检查当前 LangGraph 状态，判断是否已经过 triage 并中断在 fact_summarizer 之前
                             try:
-                                cfg = config if next_steps and 'fact_summarizer' in next_steps else config_direct
-                                state = app.get_state(cfg)
-                                state_values = state.values if hasattr(state, 'values') else {}
-                                analysis = {
-                                    "legal_facts_summary": state_values.get("legal_facts_summary", ""),
-                                    "relevant_laws": state_values.get("relevant_laws", ""),
-                                    "final_review": state_values.get("final_review", ""),
-                                }
+                                current_state = app.get_state(config)
+                                next_steps = current_state.next if hasattr(current_state, 'next') else []
                             except:
-                                analysis = {"legal_facts_summary": str(final_result), "relevant_laws": "", "final_review": ""}
-                        
-                        st.session_state.analysis_result = analysis
-                        st.session_state.messages = [] 
-                        st.session_state.report_generated = True 
-                    st.rerun()
+                                next_steps = []
+                            
+                            if next_steps and 'fact_summarizer' in next_steps:
+                                # 正常流程：已通过 triage，从中断点恢复
+                                app.update_state(config, {"form_data": final_form})
+                                final_result = app.invoke(None, config)
+                            else:
+                                # 强制生成：未经过 triage，直接启动完整分析流程
+                                from langchain_core.messages import HumanMessage, SystemMessage
+                                case_msg = HumanMessage(content=f"请分析以下劳动法案件：\n" + "\n".join([f"{k}：{v}" for k, v in final_form.items() if v]))
+                                # 使用新的 thread_id 避免旧状态干扰
+                                new_thread = st.session_state.thread_id + "_direct"
+                                config_direct = {"configurable": {"thread_id": new_thread}}
+                                # 先触发 triage 让它走到 interrupt_before
+                                init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, config_direct)
+                                # 检查 triage 结果，如果是 chat 模式则强制改为 form
+                                triage_res = init_result.get("triage_result", {})
+                                if triage_res.get("action") != "form":
+                                    app.update_state(config_direct, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
+                                app.update_state(config_direct, {"form_data": final_form})
+                                final_result = app.invoke(None, config_direct)
+                            
+                            # 稳健提取：兼容不同 LangGraph 版本的返回格式
+                            if isinstance(final_result, dict):
+                                analysis = {
+                                    "legal_facts_summary": final_result.get("legal_facts_summary", ""),
+                                    "relevant_laws": final_result.get("relevant_laws", ""),
+                                    "final_review": final_result.get("final_review", ""),
+                                }
+                            else:
+                                try:
+                                    cfg = config if next_steps and 'fact_summarizer' in next_steps else config_direct
+                                    state = app.get_state(cfg)
+                                    state_values = state.values if hasattr(state, 'values') else {}
+                                    analysis = {
+                                        "legal_facts_summary": state_values.get("legal_facts_summary", ""),
+                                        "relevant_laws": state_values.get("relevant_laws", ""),
+                                        "final_review": state_values.get("final_review", ""),
+                                    }
+                                except:
+                                    analysis = {"legal_facts_summary": str(final_result), "relevant_laws": "", "final_review": ""}
+                            
+                            st.session_state.analysis_result = analysis
+                            st.session_state.messages = [] 
+                            st.session_state.report_generated = True 
+                        st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)

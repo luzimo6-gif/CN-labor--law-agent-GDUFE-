@@ -20,6 +20,7 @@ env/
 chroma_db_labor_law/
 chroma_db_labor_law_complete/
 chroma_db_local_embedding/
+chroma_db_pro/
 
 # === IDE 和编辑器 ===
 .vscode/
