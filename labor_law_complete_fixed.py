@@ -332,7 +332,7 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     messages_for_llm = [SystemMessage(content=prompt)] + chat_history
     
     try:
-        triage_output = llm.with_structured_output(TriageOutput).invoke(messages_for_llm)
+        triage_output = llm_fast.with_structured_output(TriageOutput).invoke(messages_for_llm)
         triage_result = {
             "action": triage_output.action,
             "category": triage_output.category,
@@ -340,25 +340,36 @@ def triage_node(state: LaborLawState) -> LaborLawState:
         }
     except Exception as e:
         print(f"[ERROR] 分诊台结构化输出失败: {type(e).__name__}: {e}")
-        # 降级：用普通 LLM 调用 + 手动解析
+        # 降级方案1：换 llm 重试一次
         try:
-            raw_reply = llm.invoke(messages_for_llm).content
-            print(f"[FALLBACK] 分诊台降级原始输出: {raw_reply[:200]}...")
-            # 尝试从原始输出中提取 JSON
-            import json
-            json_match = re.search(r'\{[^}]+\}', raw_reply, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                triage_result = {
-                    "action": parsed.get("action", "chat"),
-                    "category": parsed.get("category", "通用咨询"),
-                    "reply": parsed.get("reply", raw_reply)
-                }
-            else:
-                triage_result = {"action": "chat", "category": "通用咨询", "reply": raw_reply}
+            triage_output = llm.with_structured_output(TriageOutput).invoke(messages_for_llm)
+            triage_result = {
+                "action": triage_output.action,
+                "category": triage_output.category,
+                "reply": triage_output.reply
+            }
+            print(f"[FALLBACK] 用 llm 重试结构化输出成功")
         except Exception as e2:
-            print(f"[ERROR] 分诊台降级也失败: {type(e2).__name__}: {e2}")
-            triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
+            print(f"[ERROR] 降级重试也失败: {type(e2).__name__}: {e2}")
+            # 降级方案2：普通 LLM 调用
+            try:
+                raw_reply = llm_fast.invoke(messages_for_llm).content
+                print(f"[FALLBACK] 分诊台降级原始输出: {raw_reply[:200]}...")
+                # 尝试从原始输出中提取 JSON
+                import json
+                json_match = re.search(r'\{[^}]+\}', raw_reply, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group())
+                    triage_result = {
+                        "action": parsed.get("action", "chat"),
+                        "category": parsed.get("category", "通用咨询"),
+                        "reply": parsed.get("reply", raw_reply)
+                    }
+                else:
+                    triage_result = {"action": "chat", "category": "通用咨询", "reply": raw_reply}
+            except Exception as e3:
+                print(f"[ERROR] 分诊台降级也失败: {type(e3).__name__}: {e3}")
+                triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
     
     print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}, 完善度: {completeness_pct}%")
     ai_reply_message = AIMessage(content=triage_result["reply"])
@@ -490,8 +501,13 @@ def quality_inspector_node(state: LaborLawState) -> LaborLawState:
         qa_out = llm_fast.with_structured_output(QualityOutput).invoke([HumanMessage(content=prompt)])
         is_pass, feedback = qa_out.is_pass, qa_out.feedback
     except Exception as e:
-        print(f"[QA ERROR] 质检解析失败，强行放行: {e}")
-        is_pass, feedback = True, "无"
+        print(f"[QA ERROR] 质检结构化输出失败，换 llm 重试: {e}")
+        try:
+            qa_out = llm.with_structured_output(QualityOutput).invoke([HumanMessage(content=prompt)])
+            is_pass, feedback = qa_out.is_pass, qa_out.feedback
+        except Exception as e2:
+            print(f"[QA ERROR] 重试也失败，强行放行: {e2}")
+            is_pass, feedback = True, "无"
         
     print(f"[QA] {'✅ 通过' if is_pass else '❌ 打回'} | 重试: {retry_count} | 意见: {feedback}")
 
