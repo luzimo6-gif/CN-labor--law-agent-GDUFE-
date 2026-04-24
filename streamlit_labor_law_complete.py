@@ -523,7 +523,10 @@ def load_backend():
         sys.path.append(current_dir)
         from labor_law_complete_fixed import app, llm, llm_fast
         return app, llm, llm_fast
-    except ImportError as e:
+    except Exception as e:
+        print(f"[FATAL] 后端引擎导入失败: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None, None
 
 app, llm, llm_fast = load_backend()
@@ -994,6 +997,9 @@ with col_chat:
                         st.session_state.messages.append(ai_msg)
                 
                 except Exception as e:
+                    import traceback
+                    print(f"[ERROR] 聊天流式调用失败: {type(e).__name__}: {e}")
+                    traceback.print_exc()
                     thinking_status.update(label="⚠️ 出错了", state="error", expanded=False)
                     err_msg = "抱歉，服务暂时不可用，请稍后再试。"
                     response_placeholder.markdown(err_msg)
