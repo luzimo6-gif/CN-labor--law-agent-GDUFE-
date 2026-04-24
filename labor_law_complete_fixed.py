@@ -185,6 +185,7 @@ from typing import Literal
 
 class TriageOutput(BaseModel):
     """分诊台结构化输出模型"""
+    model_config = {"use_enum_values": True}
     action: Literal["chat", "form"] = Field(description="动作类型：只能是 'chat' 或者是 'form'")
     category: str = Field(description="意图分类")
     reply: str = Field(description="回复给用户的话术")

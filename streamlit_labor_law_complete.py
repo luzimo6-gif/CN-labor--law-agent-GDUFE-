@@ -771,7 +771,7 @@ def create_pdf_report(form_data_json: str, result_json: str):
             pdf.set_font(ff, '', 10)
             pdf.set_text_color(100, 116, 139)
             pdf.set_x(16)
-            pdf.multi_cell(180, 6, text)
+            pdf.multi_cell(0, 6, text)
             pdf.set_text_color(0, 0, 0)
             pdf.ln(1)
             continue
@@ -780,12 +780,12 @@ def create_pdf_report(form_data_json: str, result_json: str):
         list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
         if list_m:
             text = sanitize(re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3)))
-            bullet = '-' if list_m.group(2) in ('-', '*') else list_m.group(2)
+            bullet = '- ' if list_m.group(2) in ('-', '*') else list_m.group(2) + ' '
             pdf.set_font(ff, '', 10)
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(14)
-            pdf.cell(6, 6, bullet)
-            pdf.multi_cell(176, 6, text)
+            combined = bullet + text
+            pdf.multi_cell(0, 6, combined)
             continue
 
         # 普通段落
