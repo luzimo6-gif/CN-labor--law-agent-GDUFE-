@@ -679,152 +679,143 @@ def _find_font_path():
     ]
     for p in candidates:
         if os.path.exists(p):
-            return p
+            # 转为正斜杠，xhtml2pdf 要求 POSIX 路径
+            return os.path.abspath(p).replace('\\', '/')
     return None
 
 # 模块级字体路径缓存
 _FONT_PATH = _find_font_path()
 
-@st.cache_data(show_spinner=False, hash_funcs={str: lambda x: x})
-def _create_pdf_report_v2(form_data_json: str, result_json: str):
-    """Markdown → PDF（fpdf2 + SimHei 中文字体，@st.cache_data 缓存，异常降级）"""
-    from fpdf import FPDF
-    from fpdf.errors import FPDFException
+@st.cache_data(show_spinner=False)
+def create_pdf_report(form_data_json: str, result_json: str):
+    """Markdown → HTML → PDF（markdown + xhtml2pdf 纯 Python，@st.cache_data 缓存）"""
+    import markdown as md_lib
+    from xhtml2pdf import pisa
+    from io import BytesIO
 
     # 反序列化
     form_data = json.loads(form_data_json)
     result_dict = json.loads(result_json)
-    md_text = create_markdown_report(form_data, result_dict)
 
-    # 调试：打印 markdown 内容
+    # 1. 组装 Markdown
+    md_text = create_markdown_report(form_data, result_dict)
     print(f"[PDF] Markdown content:\n{md_text[:500]}...")
 
-    # 文本清洗：只保留 SimHei 字体支持的字符
-    def sanitize(text):
-        result = []
-        for ch in text:
-            cp = ord(ch)
-            if 0x20 <= cp <= 0x7E:        # ASCII 可打印
-                result.append(ch)
-            elif 0x4E00 <= cp <= 0x9FFF:   # CJK 统一汉字
-                result.append(ch)
-            elif 0x3400 <= cp <= 0x4DBF:   # CJK 扩展A
-                result.append(ch)
-            elif 0x3000 <= cp <= 0x303F:   # 中文标点
-                result.append(ch)
-            elif 0xFF00 <= cp <= 0xFFEF:   # 全角符号
-                result.append(ch)
-            elif ch == '\n':               # 换行
-                result.append(ch)
-            # 其他全部跳过
-        return ''.join(result).strip()
+    # 2. Markdown → HTML（开启 tables 扩展）
+    html_body = md_lib.markdown(md_text, extensions=['tables'])
 
-    # 初始化 PDF
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=20)
-
-    ff = 'Helvetica'
+    # 3. 字体 CSS
+    font_face_css = ""
+    font_family = "Helvetica, Arial, sans-serif"
     if _FONT_PATH:
-        pdf.add_font('SimHei', '', _FONT_PATH, uni=True)
-        pdf.add_font('SimHei', 'B', _FONT_PATH, uni=True)
-        ff = 'SimHei'
+        font_face_css = f"""
+        @font-face {{
+            font-family: SimHei;
+            src: url("{_FONT_PATH}");
+        }}
+        @font-face {{
+            font-family: SimHei;
+            src: url("{_FONT_PATH}");
+            font-weight: bold;
+        }}
+        """
+        font_family = "SimHei, 'Microsoft YaHei', sans-serif"
 
-    pdf.add_page()
+    # 4. 完整 HTML + CSS
+    full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+{font_face_css}
+body {{
+    font-family: {font_family};
+    font-size: 11pt;
+    color: #1e293b;
+    line-height: 1.8;
+    margin: 0;
+    padding: 0;
+}}
+h1 {{
+    font-size: 20pt;
+    text-align: center;
+    color: #1e3a8a;
+    border-bottom: 2px solid #1e3a8a;
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+}}
+h2 {{
+    font-size: 14pt;
+    color: #1e3a8a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 5px;
+    margin-top: 22px;
+}}
+h3 {{
+    font-size: 12pt;
+    color: #334155;
+    margin-top: 14px;
+}}
+p {{
+    margin-bottom: 6px;
+}}
+table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 10pt;
+}}
+th {{
+    background-color: #1e3a8a;
+    color: #ffffff;
+    padding: 6px 8px;
+    text-align: left;
+    border: 1px solid #1e3a8a;
+}}
+td {{
+    border: 1px solid #d1d5db;
+    padding: 6px 8px;
+}}
+blockquote {{
+    border-left: 3px solid #3b82f6;
+    padding-left: 10px;
+    color: #64748b;
+    margin: 10px 0;
+}}
+strong {{
+    color: #0f172a;
+}}
+hr {{
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 16px 0;
+}}
+ul, ol {{
+    margin-left: 16px;
+    margin-bottom: 8px;
+}}
+li {{
+    margin-bottom: 3px;
+}}
+@page {{
+    size: A4;
+    margin: 20mm;
+}}
+</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
 
-    # 尝试格式化渲染，逐行 try/except
-    for line in md_text.split('\n'):
-        stripped = line.strip()
-        if not stripped:
-            continue
+    # 5. xhtml2pdf 生成
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(full_html, dest=pdf_buffer, encoding='utf-8')
 
-        try:
-            # 水平线
-            if stripped in ('---', '***', '___'):
-                pdf.ln(3)
-                y = pdf.get_y()
-                pdf.set_draw_color(200, 200, 200)
-                pdf.line(10, y, 200, y)
-                pdf.ln(4)
-                continue
+    if pisa_status.err:
+        print(f"[PDF] xhtml2pdf 渲染有 {pisa_status.err} 个警告，仍返回结果")
 
-            # 标题
-            if stripped.startswith('#'):
-                level = len(stripped) - len(stripped.lstrip('#'))
-                text = sanitize(stripped.lstrip('#').strip().replace('**', ''))
-                if not text:
-                    continue
-                if level == 1:
-                    pdf.set_font(ff, 'B', 16)
-                    pdf.set_text_color(30, 58, 138)
-                    pdf.cell(0, 12, text, new_x="LMARGIN", new_y="NEXT", align='C')
-                    pdf.ln(5)
-                elif level == 2:
-                    pdf.ln(2)
-                    pdf.set_font(ff, 'B', 13)
-                    pdf.set_text_color(30, 58, 138)
-                    pdf.cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
-                    pdf.ln(3)
-                else:
-                    pdf.ln(1)
-                    pdf.set_font(ff, 'B', 11)
-                    pdf.set_text_color(51, 65, 85)
-                    pdf.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-                    pdf.ln(2)
-                pdf.set_text_color(0, 0, 0)
-                continue
-
-            # 引用
-            if stripped.startswith('>'):
-                text = sanitize(stripped.lstrip('>').strip().replace('**', ''))
-                if text:
-                    pdf.set_font(ff, '', 10)
-                    pdf.set_text_color(100, 116, 139)
-                    pdf.set_x(16)
-                    pdf.multi_cell(0, 6, text)
-                    pdf.set_text_color(0, 0, 0)
-                    pdf.ln(1)
-                continue
-
-            # 列表项
-            list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
-            if list_m:
-                text = sanitize(re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3)))
-                if text:
-                    bullet = '- ' if list_m.group(2) in ('-', '*') else list_m.group(2) + ' '
-                    pdf.set_font(ff, '', 10)
-                    pdf.set_text_color(0, 0, 0)
-                    pdf.set_x(14)
-                    pdf.multi_cell(0, 6, bullet + text)
-                continue
-
-            # 普通段落
-            text = re.sub(r'\*\*(.*?)\*\*', r'\1', stripped)
-            text = re.sub(r'\*(.*?)\*', r'\1', text)
-            text = re.sub(r'`([^`]+)`', r'\1', text)
-            text = sanitize(text)
-            if not text:
-                continue
-            pdf.set_font(ff, '', 10)
-            pdf.set_text_color(30, 41, 59)
-            pdf.multi_cell(0, 6, text)
-            pdf.ln(1)
-
-        except FPDFException as e:
-            # 单行渲染失败，降级为纯文本写入
-            print(f"[PDF] 跳过问题行: {stripped[:50]}... 错误: {e}")
-            try:
-                pdf.set_font(ff, '', 10)
-                pdf.set_text_color(0, 0, 0)
-                fallback_text = sanitize(re.sub(r'[*#`>]', '', stripped))
-                if fallback_text:
-                    pdf.multi_cell(0, 6, fallback_text)
-                    pdf.ln(1)
-            except Exception:
-                print(f"[PDF] 降级也失败，彻底跳过此行")
-            continue
-
-    pdf.set_text_color(0, 0, 0)
-    return bytes(pdf.output())
+    return pdf_buffer.getvalue()
 
 # ==========================================
 # 4. 左侧边栏
@@ -1034,7 +1025,7 @@ if col_panel is not None:
             # PDF 生成（@st.cache_data 自动缓存，传 JSON 字符串保证可哈希）
             form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
             result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
-            pdf_bytes = _create_pdf_report_v2(form_json, result_json)
+            pdf_bytes = create_pdf_report(form_json, result_json)
             
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
