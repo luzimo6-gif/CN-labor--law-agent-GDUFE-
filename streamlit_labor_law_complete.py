@@ -745,31 +745,6 @@ li {{ margin-bottom: 4px; }}
     
     pdf_bytes = HTML(string=full_html).write_pdf()
     return pdf_bytes
-    ]
-    
-    for title, content in sections:
-        pdf.set_draw_color(226, 232, 240)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(5)
-        
-        pdf.set_font(ff, 'B', 14)
-        pdf.set_text_color(30, 58, 138)
-        pdf.cell(0, 9, title, new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(0, 0, 0)
-        
-        pdf.set_font(ff, '', 10)
-        pdf.multi_cell(0, 6, content or '无数据')
-        pdf.ln(5)
-    
-    # 底部免责声明
-    pdf.set_draw_color(226, 232, 240)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(5)
-    pdf.set_font(ff, '', 9)
-    pdf.set_text_color(100, 116, 139)
-    pdf.multi_cell(0, 5, "本报告由 AI 劳动法智能助理自动生成，仅供参考，不构成法律意见。")
-    
-    return bytes(pdf.output())
 
 # ==========================================
 # 4. 左侧边栏
