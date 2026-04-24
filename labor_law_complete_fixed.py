@@ -80,6 +80,15 @@ llm = ChatOpenAI(
     max_tokens=4000
 )
 
+# 轻量级 LLM：用于 triage、query rewrite 等短输出场景，提速明显
+llm_fast = ChatOpenAI(
+    model="qwen-plus",
+    api_key=st.secrets["DASHSCOPE_API_KEY"],
+    base_url=st.secrets.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    temperature=0.1,
+    max_tokens=1500
+)
+
 # ==========================================
 # 3. 初始化 RAG 知识库 (高级 Semantic Chunking 法条级切分)
 # ==========================================
@@ -345,32 +354,30 @@ def extract_output(text: str) -> str:
     return text.strip()
 
 def fact_summarizer_node(state: LaborLawState) -> LaborLawState:
-    """节点2：事实梳理员"""
+    """节点2：事实梳理员（使用轻量 LLM 提速）"""
     form_data = state.get("form_data", {})
     form_text = "\n".join([f"- {k}: {v}" for k, v in form_data.items()])
     prompt = f"""请根据以下案件信息梳理关键事实：\n【用户表单提交信息】：\n{form_text}
-    请你必须先在 <thinking> 标签内进行沙盘推演和逻辑自洽检查。
-    思考完成后，再在 <output> 标签内梳理：1. 争议焦点 2. 关键时间节点 3. 证据情况分析 4. 法律适用预判"""
-    messages = [SystemMessage(content="你是劳动法律师助理"), HumanMessage(content=prompt)]
-    return {"legal_facts_summary": extract_output(llm.invoke(messages).content)}
+    直接输出：1. 争议焦点 2. 关键时间节点 3. 证据情况分析 4. 法律适用预判。无需思考过程。"""
+    messages = [SystemMessage(content="你是劳动法律师助理，直接输出分析结果"), HumanMessage(content=prompt)]
+    return {"legal_facts_summary": llm_fast.invoke(messages).content}
 
 def legal_researcher_node(state: LaborLawState) -> LaborLawState:
-    """节点3 (并行分支A)：法条检索专员"""
-    print("\n[并发-分支A] [法条专员] 正在查询知识库...")
+    """节点3：法条检索 + 案例参考（合并原并行双节点，减少1次LLM调用）"""
+    print("\n[法条+案例专员] 正在查询知识库并检索参考案例...")
     summary = state.get("legal_facts_summary", "")
-    if not summary: return {"relevant_laws": "暂无相关事实，无法检索法条"}
+    if not summary: return {"relevant_laws": "暂无相关事实，无法检索法条", "similar_cases": ""}
 
-    rewrite_prompt = f"你是一个专业的劳动法检索专家。请根据以下事实，提炼出 3 个用于检索的核心【法律短语】。\n要求：必须是纯正的法律术语，不要带人名公司名。\n事实：{summary}"
+    # 用轻量 LLM 快速提取检索词（替代 structured_output，更快）
+    rewrite_prompt = f"根据以下案件事实，提取3个用于法律检索的中文关键词，用逗号分隔。不要输出其他内容。\n事实：{summary[:300]}"
     try:
-        rewrite_output = llm.with_structured_output(SearchQueries).invoke([
-            SystemMessage(content="你是专业的法律检索专家，请提取查询词。"), 
-            HumanMessage(content=rewrite_prompt)
-        ])
-        queries = rewrite_output.queries
-        if not queries: queries = [summary]
+        queries_text = llm_fast.invoke([HumanMessage(content=rewrite_prompt)]).content
+        queries = [q.strip() for q in queries_text.split('，') if q.strip()][:3]
+        if not queries: queries = [summary[:50]]
     except Exception:
-        queries = [summary]
+        queries = [summary[:50]]
 
+    # 向量检索
     all_docs = []
     seen_content = set()
     try:
@@ -387,77 +394,61 @@ def legal_researcher_node(state: LaborLawState) -> LaborLawState:
                     seen_content.add(doc.page_content)
                     all_docs.append(doc)
     
-    all_docs = all_docs[:8]
+    all_docs = all_docs[:6]
     relevant_docs = "\n\n".join([doc.page_content for doc in all_docs]) if all_docs else "暂无法条"
-
-    region = state.get("form_data", {}).get("案件发生地", "未明确")
-    if not region: region = "未明确"
     
-    prompt = f"""你是一名精通中国法律适用规则的资深裁判者。
+    prompt = f"""你是一名精通中国劳动法的资深裁判者。
     【案件事实】：{summary}
-    【多路召回的相关法条】：{relevant_docs}
+    【相关法条】：{relevant_docs}
     
-    【⚖️ 绝对指令】：请在 <thinking> 中排查冲突（注意特别法优于一般法，上位法优于下位法）。
-    思考后在 <output> 标签输出：1. 适用具体法律条款 2. 适用说明 3. 赔偿计算依据 4. 程序建议"""
-    messages = [SystemMessage(content="你是精通法理的资深专家"), HumanMessage(content=prompt)]
-    return {"relevant_laws": extract_output(llm.invoke(messages).content)}
+    请直接输出（无需思考过程）：
+    ## 法条适用分析
+    1. 适用具体法律条款 2. 适用说明 3. 赔偿计算依据 4. 程序建议
 
-# 🌟 新增：并行分支B - 案例专员
-def case_researcher_node(state: LaborLawState) -> LaborLawState:
-    """节点4 (并行分支B)：相似案例检索员"""
-    print("\n[并发-分支B] [案例专员] 正在寻找典型相似判例...")
-    summary = state.get("legal_facts_summary", "")
-    if not summary: return {"similar_cases": "暂无相似案例"}
-    
-    prompt = f"""你是高级判例检索专家。请基于以下事实，简述1个国内劳动争议领域的典型相似判例（可直接生成典型法理要旨）。
-    案件事实：{summary}
-    请在 <thinking> 中推演相似度。在 <output> 标签中输出：1. 案例核心要旨 2. 对本案的参考价值。"""
-    
-    messages = [SystemMessage(content="你是高级判例检索专家"), HumanMessage(content=prompt)]
-    return {"similar_cases": extract_output(llm.invoke(messages).content)}
+    ## 参考案例要旨
+    简述1个国内劳动争议领域的典型相似判例要旨及对本案参考价值。"""
+    messages = [SystemMessage(content="你是精通法理的资深专家，直接输出分析结果"), HumanMessage(content=prompt)]
+    result = llm.invoke(messages).content
+    return {"relevant_laws": result, "similar_cases": ""}
 
 def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
-    """节点5 (汇合点)：合规审核员 (支持接受质检意见重写)"""
-    print("\n[AI] [合规审核员] 正在汇编最终报告...")
+    """节点4 (汇合点)：合规审核员"""
+    print("\n[合规审核员] 正在汇编最终报告...")
     facts = state.get("legal_facts_summary", "")
     laws = state.get("relevant_laws", "")
-    cases = state.get("similar_cases", "") # 获取并行节点的案例
-    feedback = state.get("reviewer_feedback", "") # 获取质检员意见
+    feedback = state.get("reviewer_feedback", "")
     
     form_text = "\n".join([f"- {k}: {v}" for k, v in state.get("form_data", {}).items()])
-    prompt = f"原始信息：\n{form_text}\n事实：\n{facts}\n法条：\n{laws}\n参考案例：\n{cases}"
+    prompt = f"原始信息：\n{form_text}\n事实：\n{facts}\n法条分析：\n{laws}"
     
-    # 🌟 纠错触发：如果主编有意见，强令重写
     if feedback:
         print(f"⚠️ 收到主编修改意见，开始重写：{feedback}")
-        prompt += f"\n\n【⚠️ 主编打回修改意见】：\n{feedback}\n请务必严格修正上述漏洞，重新出具最终法律建议！"
+        prompt += f"\n\n【主编打回修改意见】：\n{feedback}\n请务必严格修正上述漏洞！"
         
-    prompt += "\n请在 <thinking> 标签内审视前置分析有无漏洞。思考后在 <output> 标签提供：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"
-    messages = [SystemMessage(content="你是资深专家"), HumanMessage(content=prompt)]
-    return {"final_review": extract_output(llm.invoke(messages).content)}
+    prompt += "\n\n请直接提供（无需思考过程）：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"
+    messages = [SystemMessage(content="你是资深劳动法律师，直接输出最终建议"), HumanMessage(content=prompt)]
+    return {"final_review": llm.invoke(messages).content}
 
 # 🌟 新增：质检员把关
 def quality_inspector_node(state: LaborLawState) -> LaborLawState:
-    """节点6：主编质检员"""
-    print("\n[AI] [主编质检员] 正在对初稿进行出厂审核...")
+    """节点5：主编质检员（用轻量LLM快速审查）"""
+    print("\n[主编质检员] 正在快速审核...")
     review = state.get("final_review", "")
     retry_count = state.get("retry_count", 0)
     form_text = "\n".join([f"- {k}: {v}" for k, v in state.get("form_data", {}).items()])
     
-    prompt = f"""你是律所极其严苛的高级合伙人。请审查这份报告初稿：
-    【用户原始诉求】：\n{form_text}
-    【待审初稿】：\n{review}
+    prompt = f"""审查这份报告是否正面回答了用户诉求？有无明显逻辑漏洞或法条引用不当？只需回答 PASS 或 FAIL + 简要意见。
+    【用户诉求】：\n{form_text}
+    【报告】：\n{review[:1500]}"""
     
-    请严苛判断初稿是否正面回答了用户诉求？是否存在逻辑漏洞、计算缺失或法条引用不当？
-    """
     try:
-        qa_out = llm.with_structured_output(QualityOutput).invoke([HumanMessage(content=prompt)])
+        qa_out = llm_fast.with_structured_output(QualityOutput).invoke([HumanMessage(content=prompt)])
         is_pass, feedback = qa_out.is_pass, qa_out.feedback
     except Exception as e:
-        print(f"[QA ERROR] 质检解析失败，为防卡死强行放行: {e}")
+        print(f"[QA ERROR] 质检解析失败，强行放行: {e}")
         is_pass, feedback = True, "无"
         
-    print(f"====== QA 质检结果 ======\n状态: {'✅ 通过' if is_pass else '❌ 打回'} \n重试次数: {retry_count}\n意见: {feedback}\n=========================")
+    print(f"[QA] {'✅ 通过' if is_pass else '❌ 打回'} | 重试: {retry_count} | 意见: {feedback}")
 
     return {
         "reviewer_feedback": feedback if not is_pass else "",
@@ -468,17 +459,13 @@ def quality_inspector_node(state: LaborLawState) -> LaborLawState:
 # ==========================================
 # 6. 构建 LangGraph 工作流
 # ==========================================
-print(">>> 正在构建多智能体并发与自纠错架构流...")
+print(">>> 正在构建精简高速多智能体架构流...")
 workflow = StateGraph(LaborLawState)
 
 workflow.add_node("summarizer", summarize_conversation_node)
-workflow.add_node("triage", triage_node)  
+workflow.add_node("triage", triage_node)
 workflow.add_node("fact_summarizer", fact_summarizer_node)
-
-# 并行双节点
 workflow.add_node("legal_researcher", legal_researcher_node)
-workflow.add_node("case_researcher", case_researcher_node)
-
 workflow.add_node("compliance_reviewer", compliance_reviewer_node)
 workflow.add_node("quality_inspector", quality_inspector_node)
 
@@ -491,17 +478,12 @@ def route_after_triage(state: LaborLawState):
 
 workflow.add_conditional_edges("triage", route_after_triage, {"process_case": "fact_summarizer", "end": END})
 
-# 🌟 路由 2：并发扇出 (Fan-out)
+# 串行流水线（合并原并行双节点，减少1次LLM调用）
 workflow.add_edge("fact_summarizer", "legal_researcher")
-workflow.add_edge("fact_summarizer", "case_researcher")
-
-# 🌟 路由 3：并发汇合 (Fan-in)
-workflow.add_edge(["legal_researcher", "case_researcher"], "compliance_reviewer")
-
-# 路由 4：送交质检
+workflow.add_edge("legal_researcher", "compliance_reviewer")
 workflow.add_edge("compliance_reviewer", "quality_inspector")
 
-# 🌟 路由 5：质检纠错环
+# 质检纠错环
 def route_after_qa(state: LaborLawState):
     if state.get("is_pass_flag", True) or state.get("retry_count", 0) >= 2:
         return "end"

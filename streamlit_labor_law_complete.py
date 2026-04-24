@@ -521,12 +521,12 @@ def load_backend():
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         sys.path.append(current_dir)
-        from labor_law_complete_fixed import app, llm 
-        return app, llm
+        from labor_law_complete_fixed import app, llm, llm_fast
+        return app, llm, llm_fast
     except ImportError as e:
-        return None, None
+        return None, None, None
 
-app, llm = load_backend()
+app, llm, llm_fast = load_backend()
 
 if not app:
     st.error("后端引擎导入失败！请确保 `labor_law_complete_fixed.py` 在同一目录下。")
@@ -582,25 +582,26 @@ def extract_info_silently(chat_history, current_data):
     """Context 工程：静默提取信息到右侧卷宗，扩大提取范围"""
     if not chat_history: return current_data
     
-    # 提取更多对话范围，防止遗漏
-    recent_msgs = chat_history[-8:] if len(chat_history) > 8 else chat_history
+    # 只看最近4条用户消息（提速），因为之前的已经被提取过了
+    recent_user_msgs = [m for m in chat_history[-6:] if isinstance(m, HumanMessage)]
+    if not recent_user_msgs: return current_data
     
-    prompt = f"""你是一个后台数据提取器。请仔细阅读【聊天记录】，提取关键信息并更新【当前数据】。
+    prompt = f"""你是一个后台数据提取器。请从【用户消息】中提取关键信息并更新【当前数据】。
     没提到的保持空字符串 ""。
     
     ⚠️ 提取规则：
-    1. 案件发生地：提取具体的城市或省份名称（如"广州"→"广东省广州市"）
+    1. 案件发生地：提取具体的城市或省份名称
     2. 单位名称：提取公司/单位全称
-    3. 平均月薪：提取具体数字（如"8000"→"8000元/月"）
-    4. 时间节点：提取关键时间点（如"2024年3月入职"→"2024年3月入职"）
-    5. 核心诉求：简练概括用户想要什么（如"要回拖欠的工资和赔偿"）
-    6. 详细经过：将用户描述的事件经过整理为200字以内的摘要
+    3. 平均月薪：提取具体数字
+    4. 时间节点：提取关键时间点
+    5. 核心诉求：简练概括用户想要什么
+    6. 详细经过：整理为150字以内摘要
     
     【当前数据】：{json.dumps(current_data, ensure_ascii=False)}
-    【最近对话】：{[{'role': 'user' if isinstance(m, HumanMessage) else 'ai', 'content': m.content} for m in recent_msgs]}
+    【用户消息】：{[m.content for m in recent_user_msgs[-3:]]}
     请严格返回包含这6个键的JSON："案件发生地", "单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。"""
     try:
-        response = llm.invoke([SystemMessage(content="只输出合法JSON，不要输出其他内容"), HumanMessage(content=prompt)])
+        response = llm_fast.invoke([SystemMessage(content="只输出合法JSON"), HumanMessage(content=prompt)])
         clean_json = response.content.replace('```json', '').replace('```', '').strip()
         new_data = json.loads(clean_json)
         return {k: new_data.get(k) if new_data.get(k) else current_data.get(k, "") for k in current_data.keys()}
@@ -881,6 +882,8 @@ with st.sidebar:
         st.session_state.ready_for_analysis = False
         st.session_state.report_generated = False
         st.session_state.context_round_count = 0
+        st.session_state.cached_pdf_bytes = None
+        st.session_state.pdf_cache_key = None
         st.rerun()
 
 # ==========================================
@@ -1063,11 +1066,16 @@ if col_panel is not None:
         st.markdown(f'<div class="{panel_class}">', unsafe_allow_html=True)
         
         if st.session_state.report_generated and st.session_state.analysis_result:
-            # --- 纸质感报告预览区 ---
+            # --- 纸质感报告预览区 --- 
             st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
             
-            md_content = create_markdown_report(st.session_state.form_data, st.session_state.analysis_result)
-            pdf_bytes = create_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
+            # PDF 缓存：只在首次生成，后续直接读取
+            if 'cached_pdf_bytes' not in st.session_state or st.session_state.get('pdf_cache_key') != str(st.session_state.analysis_result):
+                pdf_bytes = create_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
+                st.session_state.cached_pdf_bytes = pdf_bytes
+                st.session_state.pdf_cache_key = str(st.session_state.analysis_result)
+            else:
+                pdf_bytes = st.session_state.cached_pdf_bytes
             
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
