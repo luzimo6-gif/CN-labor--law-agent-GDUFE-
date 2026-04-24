@@ -704,7 +704,7 @@ def _parse_ai_sections(text):
     return sections
 
 @st.cache_data(show_spinner=False)
-def create_pdf_report(form_data_json: str, result_json: str):
+def create_pdf_report_v3(form_data_json: str, result_json: str):
     """直接用 reportlab 生成 PDF（纯 Python，无系统依赖）"""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
@@ -774,37 +774,69 @@ def create_pdf_report(form_data_json: str, result_json: str):
     story.append(HRFlowable(width="100%", thickness=1.5, color=BLUE))
     story.append(Spacer(1, 4*mm))
 
-    # 正文：AI 分析结果（按 ## 章节拆分，结构化排版）
-    review_raw = result_dict.get('final_review', '无数据')
-    review_text = _clean_text(review_raw)
-    print(f"[PDF] cleaned review text:\n{review_text[:500]}...")
-
-    sections = _parse_ai_sections(review_text)
-
-    for sec_title, sec_body in sections:
-        # 章节标题
-        if sec_title:
-            story.append(Paragraph(sec_title, style_h2))
-            story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
-            story.append(Spacer(1, 2*mm))
-
-        # 章节正文：按行渲染，识别列表项和普通段落
-        if sec_body:
-            for line in sec_body.split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                # 列表项（- 开头或 数字. 开头）
-                if re.match(r'^[-*]\s+', line):
-                    item_text = re.sub(r'^[-*]\s+', '', safe)
-                    story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
-                elif re.match(r'^\d+[.、．]\s*', line):
-                    item_text = re.sub(r'^\d+[.、．]\s*', '', safe)
-                    story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
-                else:
-                    story.append(Paragraph(safe, style_body))
+    # 正文：汇总所有 AI 分析内容
+    # 1) 事实梳理
+    facts_raw = result_dict.get('legal_facts_summary', '')
+    if facts_raw:
+        story.append(Paragraph("案件事实梳理", style_h2))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+        story.append(Spacer(1, 2*mm))
+        facts_text = _clean_text(facts_raw)
+        for line in facts_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(safe, style_body))
         story.append(Spacer(1, 3*mm))
+
+    # 2) 法条适用分析
+    laws_raw = result_dict.get('relevant_laws', '')
+    if laws_raw:
+        story.append(Paragraph("法条适用分析", style_h2))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+        story.append(Spacer(1, 2*mm))
+        laws_text = _clean_text(laws_raw)
+        for line in laws_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(safe, style_body))
+        story.append(Spacer(1, 3*mm))
+
+    # 3) 合规建议报告（按 ## 章节拆分，结构化排版）
+    review_raw = result_dict.get('final_review', '')
+    if review_raw:
+        review_text = _clean_text(review_raw)
+        print(f"[PDF] cleaned review text:\n{review_text[:500]}...")
+
+        sections = _parse_ai_sections(review_text)
+
+        for sec_title, sec_body in sections:
+            # 章节标题
+            if sec_title:
+                story.append(Paragraph(sec_title, style_h2))
+                story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+                story.append(Spacer(1, 2*mm))
+
+            # 章节正文：按行渲染，识别列表项和普通段落
+            if sec_body:
+                for line in sec_body.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    # 列表项（- 开头或 数字. 开头）
+                    if re.match(r'^[-*]\s+', line):
+                        item_text = re.sub(r'^[-*]\s+', '', safe)
+                        story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
+                    elif re.match(r'^\d+[.、．]\s*', line):
+                        item_text = re.sub(r'^\d+[.、．]\s*', '', safe)
+                        story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
+                    else:
+                        story.append(Paragraph(safe, style_body))
+            story.append(Spacer(1, 3*mm))
 
     story.append(Spacer(1, 6*mm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
@@ -1021,7 +1053,7 @@ if col_panel is not None:
             # PDF 生成（@st.cache_data 自动缓存，传 JSON 字符串保证可哈希）
             form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
             result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
-            pdf_bytes = create_pdf_report(form_json, result_json)
+            pdf_bytes = create_pdf_report_v3(form_json, result_json)
             
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
