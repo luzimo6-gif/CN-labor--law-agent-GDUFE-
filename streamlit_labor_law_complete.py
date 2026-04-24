@@ -656,7 +656,7 @@ def _find_font_path():
 _FONT_PATH = _find_font_path()
 
 def _clean_text(text):
-    """清理 AI 输出中的 Markdown 标记，只保留纯文字"""
+    """清理 AI 输出中的特殊字符，保留结构标记（## 等）"""
     if not text:
         return ""
     text = re.sub(r'<[^>]+>', '', text)          # 去HTML标签
@@ -664,12 +664,11 @@ def _clean_text(text):
     text = re.sub(r'`([^`]+)`', r'\1', text)     # 去行内代码
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # 去加粗
     text = re.sub(r'\*(.*?)\*', r'\1', text)      # 去斜体
-    text = re.sub(r'#{1,6}\s*', '', text)         # 去标题标记
     # 只保留 CJK + ASCII 可打印字符 + 常见中文标点
     cleaned = []
     for ch in text:
         cp = ord(ch)
-        if (0x20 <= cp <= 0x7E or          # ASCII 可打印
+        if (0x20 <= cp <= 0x7E or          # ASCII 可打印（含 # - * 等）
             0x4E00 <= cp <= 0x9FFF or       # CJK 统一汉字
             0x3400 <= cp <= 0x4DBF or       # CJK 扩展A
             0x3000 <= cp <= 0x303F or       # 中文标点
@@ -682,6 +681,27 @@ def _clean_text(text):
     text = ''.join(cleaned)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
+
+def _parse_ai_sections(text):
+    """将 AI 输出按 ## 标题拆分为 [(标题, 正文), ...]"""
+    sections = []
+    current_title = ""
+    current_lines = []
+    for line in text.split('\n'):
+        stripped = line.strip()
+        # 匹配 ## 开头的章节标题
+        if re.match(r'^##\s+', stripped):
+            # 保存上一节
+            if current_title or current_lines:
+                sections.append((current_title, '\n'.join(current_lines).strip()))
+            current_title = re.sub(r'^##\s+', '', stripped).strip()
+            current_lines = []
+        else:
+            current_lines.append(stripped)
+    # 最后一节
+    if current_title or current_lines:
+        sections.append((current_title, '\n'.join(current_lines).strip()))
+    return sections
 
 @st.cache_data(show_spinner=False)
 def create_pdf_report(form_data_json: str, result_json: str):
@@ -754,23 +774,37 @@ def create_pdf_report(form_data_json: str, result_json: str):
     story.append(HRFlowable(width="100%", thickness=1.5, color=BLUE))
     story.append(Spacer(1, 4*mm))
 
-    # 正文：AI 分析结果
+    # 正文：AI 分析结果（按 ## 章节拆分，结构化排版）
     review_raw = result_dict.get('final_review', '无数据')
     review_text = _clean_text(review_raw)
     print(f"[PDF] cleaned review text:\n{review_text[:500]}...")
 
-    # 按行拆分，识别段落
-    for line in review_text.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        # 识别章节标题（如 "适用法条"、"关键证据与注意事项"、"操作建议"）
-        if re.match(r'^[一二三四五六七八九十\d]+[.、．]', line) or \
-           re.match(r'^适用法条|^关键证据|^操作建议|^案件事实|^法条适用|^参考案例', line):
-            story.append(Paragraph(line, style_h2))
-        else:
-            safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            story.append(Paragraph(safe, style_body))
+    sections = _parse_ai_sections(review_text)
+
+    for sec_title, sec_body in sections:
+        # 章节标题
+        if sec_title:
+            story.append(Paragraph(sec_title, style_h2))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+            story.append(Spacer(1, 2*mm))
+
+        # 章节正文：按行渲染，识别列表项和普通段落
+        if sec_body:
+            for line in sec_body.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                # 列表项（- 开头或 数字. 开头）
+                if re.match(r'^[-*]\s+', line):
+                    item_text = re.sub(r'^[-*]\s+', '', safe)
+                    story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
+                elif re.match(r'^\d+[.、．]\s*', line):
+                    item_text = re.sub(r'^\d+[.、．]\s*', '', safe)
+                    story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{item_text}", style_label))
+                else:
+                    story.append(Paragraph(safe, style_body))
+        story.append(Spacer(1, 3*mm))
 
     story.append(Spacer(1, 6*mm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
