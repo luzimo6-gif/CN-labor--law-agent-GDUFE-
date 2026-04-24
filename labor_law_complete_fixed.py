@@ -328,51 +328,87 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     5. **关键判断**：如果信息完善度 ≥ 60%，且核心诉求和详细经过至少有1个已填写，且用户没有主动补充更多细节的意愿，请将 action 设为 "form"，表示信息收集完毕。
     6. 如果用户明确说"够了""出报告""开始分析"等，立即设 action 为 "form"。
     7. 如果用户在提供新信息，即使完善度较高，也应继续 chat 以收集更多细节，除非已超10轮对话。
-    """
+
+【核心输出指令】
+请你必须先在 <thinking> 标签内进行思考，判断信息完善度。
+思考完成后，在 <output> 标签内严格输出一个合法的 JSON，绝对不要有其他废话。JSON 必须包含以下三个字段：
+{{
+    "action": "chat" 或 "form",
+    "category": "意图分类（如：讨薪、违规辞退等）",
+    "reply": "直接回复给用户的话术"
+}}"""
     messages_for_llm = [SystemMessage(content=prompt)] + chat_history
     
+    # ── 原生 LLM 调用 + 手动正则解析 ──
     try:
-        triage_output = llm_fast.with_structured_output(TriageOutput).invoke(messages_for_llm)
-        triage_result = {
-            "action": triage_output.action,
-            "category": triage_output.category,
-            "reply": triage_output.reply
-        }
+        raw_output = llm_fast.invoke(messages_for_llm).content
+        print(f"[TRIAGE] LLM 原始输出: {raw_output[:300]}...")
     except Exception as e:
-        print(f"[ERROR] 分诊台结构化输出失败: {type(e).__name__}: {e}")
-        # 降级方案1：换 llm 重试一次
-        try:
-            triage_output = llm.with_structured_output(TriageOutput).invoke(messages_for_llm)
-            triage_result = {
-                "action": triage_output.action,
-                "category": triage_output.category,
-                "reply": triage_output.reply
-            }
-            print(f"[FALLBACK] 用 llm 重试结构化输出成功")
-        except Exception as e2:
-            print(f"[ERROR] 降级重试也失败: {type(e2).__name__}: {e2}")
-            # 降级方案2：普通 LLM 调用
+        print(f"[ERROR] 分诊台 LLM 调用失败: {type(e).__name__}: {e}")
+        raw_output = ""
+    
+    # 提取 <thinking> 和 <output>
+    thinking_text = ""
+    output_text = ""
+    
+    if raw_output:
+        think_match = re.search(r'<thinking>(.*?)</thinking>', raw_output, re.DOTALL)
+        if think_match:
+            thinking_text = think_match.group(1).strip()
+        
+        out_match = re.search(r'<output>(.*?)</output>', raw_output, re.DOTALL)
+        if out_match:
+            output_text = out_match.group(1).strip()
+        else:
+            # 没有 <output> 标签，尝试把 </thinking> 之后的内容当 output
+            after_think = re.search(r'</thinking>(.*)', raw_output, re.DOTALL)
+            if after_think:
+                output_text = after_think.group(1).strip()
+    
+    # 解析 JSON
+    triage_result = None
+    if output_text:
+        # 清理 markdown 代码块包裹
+        json_str = re.sub(r'^```(?:json)?\s*', '', output_text)
+        json_str = re.sub(r'\s*```$', '', json_str)
+        json_str = json_str.strip()
+        
+        # 尝试提取 JSON 对象
+        json_match = re.search(r'\{.*\}', json_str, re.DOTALL)
+        if json_match:
             try:
-                raw_reply = llm_fast.invoke(messages_for_llm).content
-                print(f"[FALLBACK] 分诊台降级原始输出: {raw_reply[:200]}...")
-                # 尝试从原始输出中提取 JSON
-                import json
-                json_match = re.search(r'\{[^}]+\}', raw_reply, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group())
-                    triage_result = {
-                        "action": parsed.get("action", "chat"),
-                        "category": parsed.get("category", "通用咨询"),
-                        "reply": parsed.get("reply", raw_reply)
-                    }
-                else:
-                    triage_result = {"action": "chat", "category": "通用咨询", "reply": raw_reply}
-            except Exception as e3:
-                print(f"[ERROR] 分诊台降级也失败: {type(e3).__name__}: {e3}")
-                triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
+                parsed = json.loads(json_match.group())
+                triage_result = {
+                    "action": parsed.get("action", "chat"),
+                    "category": parsed.get("category", "通用咨询"),
+                    "reply": parsed.get("reply", "")
+                }
+                print(f"[TRIAGE] JSON 解析成功: action={triage_result['action']}, category={triage_result['category']}")
+            except json.JSONDecodeError as e:
+                print(f"[WARNING] JSON 解析失败: {e}, 原文: {json_str[:200]}")
+    
+    # 兜底：如果 JSON 解析失败，从原始输出中推断
+    if not triage_result:
+        reply_text = raw_output if raw_output else "抱歉，系统处理出现异常，请您再描述一下您的诉求。"
+        # 尝试从输出中推断 action
+        action = "chat"
+        if "form" in output_text.lower() or "转交" in output_text or "信息收集完毕" in output_text:
+            action = "form"
+        triage_result = {
+            "action": action,
+            "category": "通用咨询",
+            "reply": reply_text
+        }
+        print(f"[TRIAGE] 兜底模式: action={action}")
+    
+    # 拼接消息体：<thinking>标签 + reply，确保前端 parse_ai_message 正常工作
+    ai_content = ""
+    if thinking_text:
+        ai_content += f"<thinking>{thinking_text}</thinking>\n"
+    ai_content += triage_result["reply"]
     
     print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}, 完善度: {completeness_pct}%")
-    ai_reply_message = AIMessage(content=triage_result["reply"])
+    ai_reply_message = AIMessage(content=ai_content)
     return {"triage_result": triage_result, "messages": [ai_reply_message]}
 
 def extract_output(text: str) -> str:
