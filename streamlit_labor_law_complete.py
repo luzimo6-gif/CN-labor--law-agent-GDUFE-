@@ -707,17 +707,35 @@ def create_pdf_report(form_data_json: str, result_json: str):
 
     pdf.add_page()
 
-    # 文本清洗：移除 fpdf2/SimHei 不支持的 emoji 和特殊 Unicode 字符
+    # 文本清洗：只保留 SimHei 字体支持的字符，彻底避免 FPDFException
     def sanitize(text):
-        # 移除 emoji 和特殊符号，保留中文、英文、数字、基础标点
-        text = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0000FE00-\U0000FE0F\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U0000200D\U0000FE0F]', '', text)
-        # 移除常见符号替换
-        for old, new in [('⚠️', '[!]'), ('📋', ''), ('✅', '[v]'), ('❌', '[x]'), ('🎯', ''),
-                         ('📊', ''), ('💡', ''), ('🔍', ''), ('⚖️', ''), ('📝', ''),
-                         ('👉', '>'), ('🚀', '>>'), ('⏰', '[time]'), ('•', '-'),
-                         ('\u2022', '-'), ('\u200b', ''), ('\ufeff', '')]:
-            text = text.replace(old, new)
-        return text.strip()
+        result = []
+        for ch in text:
+            cp = ord(ch)
+            # ASCII 可打印字符 (0x20-0x7E)
+            if 0x20 <= cp <= 0x7E:
+                result.append(ch)
+            # CJK 统一汉字 (0x4E00-0x9FFF)
+            elif 0x4E00 <= cp <= 0x9FFF:
+                result.append(ch)
+            # CJK 扩展A (0x3400-0x4DBF)
+            elif 0x3400 <= cp <= 0x4DBF:
+                result.append(ch)
+            # 中文标点 (0x3000-0x303F) + CJK 符号 (0xFF00-0xFFEF)
+            elif 0x3000 <= cp <= 0x303F:
+                result.append(ch)
+            elif 0xFF00 <= cp <= 0xFFEF:
+                result.append(ch)
+            # 全角/半角数字字母
+            elif 0xFF10 <= cp <= 0xFF19 or 0xFF21 <= cp <= 0xFF3A or 0xFF41 <= cp <= 0xFF5A:
+                result.append(ch)
+            # 换行
+            elif ch == '\n':
+                result.append(ch)
+            # 其他全部跳过（emoji、特殊符号等）
+            else:
+                continue
+        return ''.join(result).strip()
 
     # 按行解析 Markdown，简洁可靠
     for line in md_text.split('\n'):
