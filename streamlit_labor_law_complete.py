@@ -679,151 +679,114 @@ def _find_font_path():
     ]
     for p in candidates:
         if os.path.exists(p):
-            return os.path.abspath(p)
+            return p
     return None
 
-# 模块级字体路径缓存，避免每次调用重复查找
+# 模块级字体路径缓存
 _FONT_PATH = _find_font_path()
 
 @st.cache_data(show_spinner=False)
 def create_pdf_report(form_data_json: str, result_json: str):
-    """Markdown → HTML → PDF（xhtml2pdf 纯 Python，@st.cache_data 缓存）"""
-    import markdown as md_lib
-    from xhtml2pdf import pisa
-    from io import BytesIO
+    """Markdown → PDF（fpdf2 + SimHei 中文字体，@st.cache_data 缓存）"""
+    from fpdf import FPDF
 
-    # 反序列化参数
+    # 反序列化
     form_data = json.loads(form_data_json)
     result_dict = json.loads(result_json)
-
-    # 1. 组装 Markdown 文本
     md_text = create_markdown_report(form_data, result_dict)
 
-    # 2. Markdown → HTML（支持表格扩展）
-    html_body = md_lib.markdown(md_text, extensions=['tables'])
+    # 初始化 PDF
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
 
-    # 3. 构建字体 CSS
-    font_face_css = ""
-    font_family = "Helvetica, Arial, sans-serif"
+    ff = 'Helvetica'
     if _FONT_PATH:
-        # xhtml2pdf 通过 @font-face + 本地绝对路径加载 TTF
-        font_path_posix = _FONT_PATH.replace(os.sep, '/')
-        font_face_css = f"""
-        @font-face {{
-            font-family: SimHei;
-            src: url("{font_path_posix}");
-        }}
-        @font-face {{
-            font-family: SimHei;
-            src: url("{font_path_posix}");
-            font-weight: bold;
-        }}
-        """
-        font_family = "SimHei, 'Microsoft YaHei', sans-serif"
+        pdf.add_font('SimHei', '', _FONT_PATH, uni=True)
+        pdf.add_font('SimHei', 'B', _FONT_PATH, uni=True)
+        ff = 'SimHei'
 
-    # 4. 完整 HTML 骨架 + CSS 样式
-    full_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-{font_face_css}
-body {{
-    font-family: {font_family};
-    font-size: 11pt;
-    color: #1e293b;
-    line-height: 1.8;
-    margin: 0;
-    padding: 0;
-}}
-h1 {{
-    font-size: 20pt;
-    text-align: center;
-    color: #1e3a8a;
-    border-bottom: 2px solid #1e3a8a;
-    padding-bottom: 8px;
-    margin-bottom: 18px;
-}}
-h2 {{
-    font-size: 14pt;
-    color: #1e3a8a;
-    border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 5px;
-    margin-top: 22px;
-}}
-h3 {{
-    font-size: 12pt;
-    color: #334155;
-    margin-top: 14px;
-}}
-p {{
-    margin-bottom: 6px;
-}}
-table {{
-    border-collapse: collapse;
-    width: 100%;
-    margin: 10px 0;
-    font-size: 10pt;
-}}
-th {{
-    background-color: #1e3a8a;
-    color: #ffffff;
-    padding: 6px 8px;
-    text-align: left;
-    border: 1px solid #1e3a8a;
-}}
-td {{
-    border: 1px solid #d1d5db;
-    padding: 6px 8px;
-}}
-tr:nth-child(even) {{
-    background-color: #f8fafc;
-}}
-blockquote {{
-    border-left: 3px solid #3b82f6;
-    padding-left: 10px;
-    color: #64748b;
-    margin: 10px 0;
-}}
-strong {{
-    color: #0f172a;
-}}
-hr {{
-    border: none;
-    border-top: 1px solid #e2e8f0;
-    margin: 16px 0;
-}}
-ul, ol {{
-    margin-left: 16px;
-    margin-bottom: 8px;
-}}
-li {{
-    margin-bottom: 3px;
-}}
-@page {{
-    size: A4;
-    margin: 20mm;
-}}
-</style>
-</head>
-<body>
-{html_body}
-</body>
-</html>"""
+    pdf.add_page()
 
-    # 5. xhtml2pdf 生成 PDF
-    pdf_buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(full_html, dest=pdf_buffer, encoding='utf-8')
+    # 按行解析 Markdown，简洁可靠
+    for line in md_text.split('\n'):
+        stripped = line.strip()
 
-    if pisa_status.err:
-        # 降级：如果 xhtml2pdf 出错，返回带错误提示的简单 PDF
-        fallback_html = f"""<html><head><meta charset="utf-8">
-<style>body {{ font-family: {font_family}; font-size: 11pt; }}</style>
-</head><body><h1>PDF 生成警告</h1><p>部分格式可能不完整，请以预览为准。</p><hr/>{html_body}</body></html>"""
-        pdf_buffer = BytesIO()
-        pisa.CreatePDF(fallback_html, dest=pdf_buffer, encoding='utf-8')
+        # 空行
+        if not stripped:
+            continue
 
-    return pdf_buffer.getvalue()
+        # 水平线
+        if stripped in ('---', '***', '___'):
+            pdf.ln(3)
+            y = pdf.get_y()
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(10, y, 200, y)
+            pdf.ln(4)
+            continue
+
+        # 标题
+        if stripped.startswith('#'):
+            level = len(stripped) - len(stripped.lstrip('#'))
+            text = stripped.lstrip('#').strip().replace('**', '')
+            if level == 1:
+                pdf.set_font(ff, 'B', 16)
+                pdf.set_text_color(30, 58, 138)
+                pdf.cell(0, 12, text, new_x="LMARGIN", new_y="NEXT", align='C')
+                y = pdf.get_y()
+                pdf.set_draw_color(30, 58, 138)
+                pdf.set_line_width(0.6)
+                pdf.line(10, y, 200, y)
+                pdf.set_line_width(0.2)
+                pdf.ln(5)
+            elif level == 2:
+                pdf.ln(2)
+                pdf.set_font(ff, 'B', 13)
+                pdf.set_text_color(30, 58, 138)
+                pdf.cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(3)
+            else:
+                pdf.ln(1)
+                pdf.set_font(ff, 'B', 11)
+                pdf.set_text_color(51, 65, 85)
+                pdf.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(2)
+            pdf.set_text_color(0, 0, 0)
+            continue
+
+        # 引用
+        if stripped.startswith('>'):
+            text = stripped.lstrip('>').strip().replace('**', '')
+            pdf.set_font(ff, '', 10)
+            pdf.set_text_color(100, 116, 139)
+            pdf.set_x(16)
+            pdf.multi_cell(180, 6, text)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+            continue
+
+        # 列表项
+        list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
+        if list_m:
+            text = re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3))
+            bullet = '\u2022' if list_m.group(2) in ('-', '*') else list_m.group(2)
+            pdf.set_font(ff, '', 10)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_x(14)
+            pdf.cell(6, 6, bullet)
+            pdf.multi_cell(176, 6, text)
+            continue
+
+        # 普通段落
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', stripped)
+        text = re.sub(r'\*(.*?)\*', r'\1', text)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        pdf.set_font(ff, '', 10)
+        pdf.set_text_color(30, 41, 59)
+        pdf.multi_cell(0, 6, text)
+        pdf.ln(1)
+
+    pdf.set_text_color(0, 0, 0)
+    return bytes(pdf.output())
 
 # ==========================================
 # 4. 左侧边栏
