@@ -440,6 +440,7 @@ def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
 ## 操作建议
 给出具体可执行的操作步骤和风险提示。
 
+⚠️ 格式要求：禁止使用表格（Markdown table），所有内容必须用文字段落呈现。
 ⚠️ 严格字数限制：输出正文必须在2000字以内，超出部分直接截断。语言精炼，直击要害，不要赘述。"""
     messages = [SystemMessage(content="你是资深劳动法律师"), HumanMessage(content=prompt)]
     return {"final_review": extract_output(llm.invoke(messages).content)}

@@ -641,35 +641,6 @@ def strip_markdown(text):
     text = re.sub(r'\n\s*\n', '\n\n', text)
     return text.strip()
 
-def create_markdown_report(form_data, result_dict):
-    """生成 Markdown 格式的分析报告（仅合规审查内容，2000字以内）"""
-    now = datetime.now().strftime('%Y年%m月%d日')
-    
-    md = f"""# 劳动法律合规建议报告
-
-> 生成日期：{now}
-
----
-
-## 案件基本信息
-
-"""
-    for k, v in form_data.items():
-        if v:
-            md += f"- **{k}**：{v}\n"
-    
-    md += f"""
-
----
-
-{result_dict.get('final_review', '无数据')}
-
----
-
-*本报告由 AI 劳动法智能助理自动生成，仅供参考，不构成法律意见。*
-"""
-    return md
-
 def _find_font_path():
     """查找中文字体（仅相对路径，兼容 Streamlit Cloud Linux 环境）"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -679,143 +650,134 @@ def _find_font_path():
     ]
     for p in candidates:
         if os.path.exists(p):
-            # 转为正斜杠，xhtml2pdf 要求 POSIX 路径
             return os.path.abspath(p).replace('\\', '/')
     return None
 
-# 模块级字体路径缓存
 _FONT_PATH = _find_font_path()
+
+def _clean_text(text):
+    """清理 AI 输出中的 Markdown 标记，只保留纯文字"""
+    if not text:
+        return ""
+    text = re.sub(r'<[^>]+>', '', text)          # 去HTML标签
+    text = re.sub(r'```[\s\S]*?```', '', text)   # 去代码块
+    text = re.sub(r'`([^`]+)`', r'\1', text)     # 去行内代码
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # 去加粗
+    text = re.sub(r'\*(.*?)\*', r'\1', text)      # 去斜体
+    text = re.sub(r'#{1,6}\s*', '', text)         # 去标题标记
+    # 只保留 CJK + ASCII 可打印字符 + 常见中文标点
+    cleaned = []
+    for ch in text:
+        cp = ord(ch)
+        if (0x20 <= cp <= 0x7E or          # ASCII 可打印
+            0x4E00 <= cp <= 0x9FFF or       # CJK 统一汉字
+            0x3400 <= cp <= 0x4DBF or       # CJK 扩展A
+            0x3000 <= cp <= 0x303F or       # 中文标点
+            0xFF00 <= cp <= 0xFFEF or       # 全角字符
+            cp in (0x000A, 0x000D) or       # 换行
+            0x2000 <= cp <= 0x206F or       # 通用标点
+            0x2E80 <= cp <= 0x2EFF or       # CJK 部首补充
+            0x2F00 <= cp <= 0x2FDF):        # 康熙部首
+            cleaned.append(ch)
+    text = ''.join(cleaned)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 @st.cache_data(show_spinner=False)
 def create_pdf_report(form_data_json: str, result_json: str):
-    """Markdown → HTML → PDF（markdown + xhtml2pdf 纯 Python，@st.cache_data 缓存）"""
-    import markdown as md_lib
-    from xhtml2pdf import pisa
+    """直接用 reportlab 生成 PDF（纯 Python，无系统依赖）"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from io import BytesIO
 
-    # 反序列化
     form_data = json.loads(form_data_json)
     result_dict = json.loads(result_json)
 
-    # 1. 组装 Markdown
-    md_text = create_markdown_report(form_data, result_dict)
-    print(f"[PDF] Markdown content:\n{md_text[:500]}...")
-
-    # 2. Markdown → HTML（开启 tables 扩展）
-    html_body = md_lib.markdown(md_text, extensions=['tables'])
-
-    # 3. 字体 CSS
-    font_face_css = ""
-    font_family = "Helvetica, Arial, sans-serif"
+    # ── 注册字体 ──
+    ff = "SimHei" if _FONT_PATH else "Helvetica"
     if _FONT_PATH:
-        font_face_css = f"""
-        @font-face {{
-            font-family: SimHei;
-            src: url("{_FONT_PATH}");
-        }}
-        @font-face {{
-            font-family: SimHei;
-            src: url("{_FONT_PATH}");
-            font-weight: bold;
-        }}
-        """
-        font_family = "SimHei, 'Microsoft YaHei', sans-serif"
+        try:
+            pdfmetrics.registerFont(TTFont('SimHei', _FONT_PATH))
+        except Exception as e:
+            print(f"[PDF] 字体注册失败: {e}，使用 Helvetica")
+            ff = "Helvetica"
 
-    # 4. 完整 HTML + CSS
-    full_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-{font_face_css}
-body {{
-    font-family: {font_family};
-    font-size: 11pt;
-    color: #1e293b;
-    line-height: 1.8;
-    margin: 0;
-    padding: 0;
-}}
-h1 {{
-    font-size: 20pt;
-    text-align: center;
-    color: #1e3a8a;
-    border-bottom: 2px solid #1e3a8a;
-    padding-bottom: 8px;
-    margin-bottom: 18px;
-}}
-h2 {{
-    font-size: 14pt;
-    color: #1e3a8a;
-    border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 5px;
-    margin-top: 22px;
-}}
-h3 {{
-    font-size: 12pt;
-    color: #334155;
-    margin-top: 14px;
-}}
-p {{
-    margin-bottom: 6px;
-}}
-table {{
-    border-collapse: collapse;
-    width: 100%;
-    margin: 10px 0;
-    font-size: 10pt;
-}}
-th {{
-    background-color: #1e3a8a;
-    color: #ffffff;
-    padding: 6px 8px;
-    text-align: left;
-    border: 1px solid #1e3a8a;
-}}
-td {{
-    border: 1px solid #d1d5db;
-    padding: 6px 8px;
-}}
-blockquote {{
-    border-left: 3px solid #3b82f6;
-    padding-left: 10px;
-    color: #64748b;
-    margin: 10px 0;
-}}
-strong {{
-    color: #0f172a;
-}}
-hr {{
-    border: none;
-    border-top: 1px solid #e2e8f0;
-    margin: 16px 0;
-}}
-ul, ol {{
-    margin-left: 16px;
-    margin-bottom: 8px;
-}}
-li {{
-    margin-bottom: 3px;
-}}
-@page {{
-    size: A4;
-    margin: 20mm;
-}}
-</style>
-</head>
-<body>
-{html_body}
-</body>
-</html>"""
+    # ── 样式定义 ──
+    BLUE = HexColor('#1e3a8a')
+    DARK = HexColor('#1e293b')
+    GRAY = HexColor('#64748b')
 
-    # 5. xhtml2pdf 生成
-    pdf_buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(full_html, dest=pdf_buffer, encoding='utf-8')
+    style_title = ParagraphStyle('Title', fontName=ff, fontSize=18, textColor=BLUE,
+                                  alignment=1, spaceAfter=6, leading=24)
+    style_date = ParagraphStyle('Date', fontName=ff, fontSize=10, textColor=GRAY,
+                                 alignment=1, spaceAfter=4)
+    style_h2 = ParagraphStyle('H2', fontName=ff, fontSize=14, textColor=BLUE,
+                               spaceBefore=14, spaceAfter=6, leading=20)
+    style_label = ParagraphStyle('Label', fontName=ff, fontSize=10, textColor=DARK,
+                                  leftIndent=10, spaceAfter=2, leading=16)
+    style_body = ParagraphStyle('Body', fontName=ff, fontSize=10, textColor=DARK,
+                                 spaceBefore=4, spaceAfter=4, leading=17,
+                                 firstLineIndent=20)
+    style_footer = ParagraphStyle('Footer', fontName=ff, fontSize=8, textColor=GRAY,
+                                   alignment=1, spaceBefore=12)
 
-    if pisa_status.err:
-        print(f"[PDF] xhtml2pdf 渲染有 {pisa_status.err} 个警告，仍返回结果")
+    # ── 构建 PDF ──
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
 
-    return pdf_buffer.getvalue()
+    story = []
+
+    # 标题
+    story.append(Paragraph("劳动法律合规建议报告", style_title))
+    story.append(Paragraph(f"生成日期：{datetime.now().strftime('%Y年%m月%d日')}", style_date))
+    story.append(Spacer(1, 4*mm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=BLUE))
+    story.append(Spacer(1, 4*mm))
+
+    # 案件基本信息
+    story.append(Paragraph("案件基本信息", style_h2))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+    story.append(Spacer(1, 2*mm))
+    for k, v in form_data.items():
+        if v:
+            safe_k = _clean_text(k).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            safe_v = _clean_text(str(v)).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(f"<b>{safe_k}</b>：{safe_v}", style_label))
+    story.append(Spacer(1, 4*mm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=BLUE))
+    story.append(Spacer(1, 4*mm))
+
+    # 正文：AI 分析结果
+    review_raw = result_dict.get('final_review', '无数据')
+    review_text = _clean_text(review_raw)
+    print(f"[PDF] cleaned review text:\n{review_text[:500]}...")
+
+    # 按行拆分，识别段落
+    for line in review_text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # 识别章节标题（如 "适用法条"、"关键证据与注意事项"、"操作建议"）
+        if re.match(r'^[一二三四五六七八九十\d]+[.、．]', line) or \
+           re.match(r'^适用法条|^关键证据|^操作建议|^案件事实|^法条适用|^参考案例', line):
+            story.append(Paragraph(line, style_h2))
+        else:
+            safe = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(safe, style_body))
+
+    story.append(Spacer(1, 6*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#e2e8f0')))
+    story.append(Paragraph("本报告由 AI 劳动法智能助理自动生成，仅供参考，不构成法律意见。", style_footer))
+
+    doc.build(story)
+    return buf.getvalue()
 
 # ==========================================
 # 4. 左侧边栏
