@@ -427,7 +427,19 @@ def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
         print(f"⚠️ 收到主编修改意见，开始重写：{feedback}")
         prompt += f"\n\n【主编打回修改意见】：\n{feedback}\n请务必严格修正上述漏洞！"
         
-    prompt += "\n\n请在 <thinking> 标签内审视前置分析有无漏洞。思考后在 <output> 标签提供：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"
+    prompt += """
+请你在 <thinking> 标签内审视前置分析有无漏洞。思考后在 <output> 标签输出一份精炼的合规法律建议报告，必须包含以下三部分：
+
+## 适用法条
+列出本案最核心的2-3条法律条款及其适用要点，简明扼要。
+
+## 关键证据与注意事项
+指出用户需要准备的核心证据及取证注意事项。
+
+## 操作建议
+给出具体可执行的操作步骤和风险提示。
+
+⚠️ 严格字数限制：输出正文必须在2000字以内，超出部分直接截断。语言精炼，直击要害，不要赘述。"""
     messages = [SystemMessage(content="你是资深劳动法律师"), HumanMessage(content=prompt)]
     return {"final_review": extract_output(llm.invoke(messages).content)}
 

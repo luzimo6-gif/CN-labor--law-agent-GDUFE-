@@ -642,10 +642,10 @@ def strip_markdown(text):
     return text.strip()
 
 def create_markdown_report(form_data, result_dict):
-    """生成 Markdown 格式的分析报告"""
+    """生成 Markdown 格式的分析报告（仅合规审查内容，2000字以内）"""
     now = datetime.now().strftime('%Y年%m月%d日')
     
-    md = f"""# 劳动法律深度分析报告
+    md = f"""# 劳动法律合规建议报告
 
 > 生成日期：{now}
 
@@ -661,20 +661,6 @@ def create_markdown_report(form_data, result_dict):
     md += f"""
 
 ---
-
-## 一、事实梳理
-
-{result_dict.get('legal_facts_summary', '无数据')}
-
----
-
-## 二、法条适用分析
-
-{result_dict.get('relevant_laws', '无数据')}
-
----
-
-## 三、合规审查与最终建议
 
 {result_dict.get('final_review', '无数据')}
 
@@ -1058,18 +1044,11 @@ if col_panel is not None:
                 use_container_width=True
             )
             
-            facts = strip_markdown(st.session_state.analysis_result.get('legal_facts_summary', '无数据'))
-            laws = strip_markdown(st.session_state.analysis_result.get('relevant_laws', '无数据'))
             advice = strip_markdown(st.session_state.analysis_result.get('final_review', '无数据'))
             
             preview_html = f"""
             <div class="report-preview-box">
-                <h3 style="text-align:center; color:#1e3a8a; margin-bottom: 20px;">劳动法律深度分析报告</h3>
-                <h4>一、事实梳理</h4>
-                <p>{facts.replace(chr(10), '<br>')}</p>
-                <h4>二、法条适用分析</h4>
-                <p>{laws.replace(chr(10), '<br>')}</p>
-                <h4>三、最终合规建议</h4>
+                <h3 style="text-align:center; color:#1e3a8a; margin-bottom: 20px;">劳动法律合规建议报告</h3>
                 <p>{advice.replace(chr(10), '<br>')}</p>
             </div>
             """
