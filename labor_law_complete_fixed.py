@@ -339,8 +339,26 @@ def triage_node(state: LaborLawState) -> LaborLawState:
             "reply": triage_output.reply
         }
     except Exception as e:
-        print(f"[ERROR] 分诊台结构化输出失败: {e}")
-        triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
+        print(f"[ERROR] 分诊台结构化输出失败: {type(e).__name__}: {e}")
+        # 降级：用普通 LLM 调用 + 手动解析
+        try:
+            raw_reply = llm.invoke(messages_for_llm).content
+            print(f"[FALLBACK] 分诊台降级原始输出: {raw_reply[:200]}...")
+            # 尝试从原始输出中提取 JSON
+            import json
+            json_match = re.search(r'\{[^}]+\}', raw_reply, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                triage_result = {
+                    "action": parsed.get("action", "chat"),
+                    "category": parsed.get("category", "通用咨询"),
+                    "reply": parsed.get("reply", raw_reply)
+                }
+            else:
+                triage_result = {"action": "chat", "category": "通用咨询", "reply": raw_reply}
+        except Exception as e2:
+            print(f"[ERROR] 分诊台降级也失败: {type(e2).__name__}: {e2}")
+            triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
     
     print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}, 完善度: {completeness_pct}%")
     ai_reply_message = AIMessage(content=triage_result["reply"])
