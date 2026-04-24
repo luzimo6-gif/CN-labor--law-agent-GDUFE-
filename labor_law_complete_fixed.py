@@ -433,10 +433,20 @@ def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
 
 # 🌟 新增：质检员把关
 def quality_inspector_node(state: LaborLawState) -> LaborLawState:
-    """节点5：主编质检员（用轻量LLM快速审查）"""
+    """节点5：主编质检员（打回重写一次后直接通过，不再二次审查）"""
     print("\n[主编质检员] 正在快速审核...")
     review = state.get("final_review", "")
     retry_count = state.get("retry_count", 0)
+    
+    # 已经重写过了，直接通过，省掉一次 LLM 调用
+    if retry_count >= 1:
+        print(f"[QA] ⏭️ 已重写过一次，直接通过 | 重试: {retry_count}")
+        return {
+            "reviewer_feedback": "",
+            "retry_count": retry_count + 1,
+            "is_pass_flag": True
+        }
+    
     form_text = "\n".join([f"- {k}: {v}" for k, v in state.get("form_data", {}).items()])
     
     prompt = f"""审查这份报告是否正面回答了用户诉求？有无明显逻辑漏洞或法条引用不当？只需回答 PASS 或 FAIL + 简要意见。
