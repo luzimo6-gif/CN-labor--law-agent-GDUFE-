@@ -707,6 +707,18 @@ def create_pdf_report(form_data_json: str, result_json: str):
 
     pdf.add_page()
 
+    # 文本清洗：移除 fpdf2/SimHei 不支持的 emoji 和特殊 Unicode 字符
+    def sanitize(text):
+        # 移除 emoji 和特殊符号，保留中文、英文、数字、基础标点
+        text = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0000FE00-\U0000FE0F\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U0000200D\U0000FE0F]', '', text)
+        # 移除常见符号替换
+        for old, new in [('⚠️', '[!]'), ('📋', ''), ('✅', '[v]'), ('❌', '[x]'), ('🎯', ''),
+                         ('📊', ''), ('💡', ''), ('🔍', ''), ('⚖️', ''), ('📝', ''),
+                         ('👉', '>'), ('🚀', '>>'), ('⏰', '[time]'), ('•', '-'),
+                         ('\u2022', '-'), ('\u200b', ''), ('\ufeff', '')]:
+            text = text.replace(old, new)
+        return text.strip()
+
     # 按行解析 Markdown，简洁可靠
     for line in md_text.split('\n'):
         stripped = line.strip()
@@ -727,7 +739,7 @@ def create_pdf_report(form_data_json: str, result_json: str):
         # 标题
         if stripped.startswith('#'):
             level = len(stripped) - len(stripped.lstrip('#'))
-            text = stripped.lstrip('#').strip().replace('**', '')
+            text = sanitize(stripped.lstrip('#').strip().replace('**', ''))
             if level == 1:
                 pdf.set_font(ff, 'B', 16)
                 pdf.set_text_color(30, 58, 138)
@@ -755,7 +767,7 @@ def create_pdf_report(form_data_json: str, result_json: str):
 
         # 引用
         if stripped.startswith('>'):
-            text = stripped.lstrip('>').strip().replace('**', '')
+            text = sanitize(stripped.lstrip('>').strip().replace('**', ''))
             pdf.set_font(ff, '', 10)
             pdf.set_text_color(100, 116, 139)
             pdf.set_x(16)
@@ -767,8 +779,8 @@ def create_pdf_report(form_data_json: str, result_json: str):
         # 列表项
         list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
         if list_m:
-            text = re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3))
-            bullet = '\u2022' if list_m.group(2) in ('-', '*') else list_m.group(2)
+            text = sanitize(re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3)))
+            bullet = '-' if list_m.group(2) in ('-', '*') else list_m.group(2)
             pdf.set_font(ff, '', 10)
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(14)
@@ -780,6 +792,9 @@ def create_pdf_report(form_data_json: str, result_json: str):
         text = re.sub(r'\*\*(.*?)\*\*', r'\1', stripped)
         text = re.sub(r'\*(.*?)\*', r'\1', text)
         text = re.sub(r'`([^`]+)`', r'\1', text)
+        text = sanitize(text)
+        if not text:
+            continue
         pdf.set_font(ff, '', 10)
         pdf.set_text_color(30, 41, 59)
         pdf.multi_cell(0, 6, text)
