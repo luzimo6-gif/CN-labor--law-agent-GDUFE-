@@ -642,109 +642,115 @@ def create_markdown_report(form_data, result_dict):
     return md
 
 def create_pdf_report(form_data, result_dict):
-    """Markdown → HTML → PDF（使用 weasyprint，完美支持中文和表格）"""
+    """Markdown → HTML → PDF（使用 xhtml2pdf，纯 Python，支持中文字体和表格）"""
     import markdown
-    from weasyprint import HTML
-    
-    md_content = create_markdown_report(form_data, result_dict)
-    html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
-    
-    # 查找中文字体路径（weasyprint 通过 CSS @font-face 加载）
+    from xhtml2pdf import pisa
+    from io import BytesIO
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    # 注册中文字体
     font_path = None
     for p in [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
         "simhei.ttf",
         "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/truetype/simhei.ttf",  # Linux 云端备用
+        "/usr/share/fonts/truetype/simhei.ttf",
     ]:
         if os.path.exists(p):
             font_path = p
             break
-    
-    font_face_css = ""
+
     if font_path:
-        import base64
-        with open(font_path, "rb") as f:
-            font_b64 = base64.b64encode(f.read()).decode()
-        font_face_css = f"""
+        try:
+            pdfmetrics.registerFont(TTFont('SimHei', font_path))
+        except Exception:
+            pass
+
+    md_content = create_markdown_report(form_data, result_dict)
+    html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
+
+    # xhtml2pdf 字体声明（通过 @font-face + PDF 内嵌）
+    font_css = ""
+    if font_path:
+        font_css = f"""
         @font-face {{
-            font-family: 'SimHei';
-            src: url(data:font/ttf;base64,{font_b64}) format('truetype');
-            font-weight: normal;
-        }}
-        @font-face {{
-            font-family: 'SimHei';
-            src: url(data:font/ttf;base64,{font_b64}) format('truetype');
-            font-weight: bold;
+            font-family: SimHei;
+            src: url("{font_path.replace(os.sep, '/')}");
         }}
         """
-    
+
     full_html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-{font_face_css}
+{font_css}
 body {{
-    font-family: 'SimHei', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-family: SimHei, 'Microsoft YaHei', 'PingFang SC', sans-serif;
     font-size: 11pt;
     color: #1e293b;
     line-height: 1.8;
-    margin: 30px 40px;
+    margin: 20px 30px;
 }}
 h1 {{
-    font-size: 22pt;
+    font-size: 20pt;
     text-align: center;
     color: #1e3a8a;
-    border-bottom: 3px solid #1e3a8a;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
+    border-bottom: 2px solid #1e3a8a;
+    padding-bottom: 8px;
+    margin-bottom: 18px;
 }}
 h2 {{
-    font-size: 15pt;
+    font-size: 14pt;
     color: #1e3a8a;
     border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 5px;
-    margin-top: 25px;
+    padding-bottom: 4px;
+    margin-top: 22px;
 }}
-h3 {{ font-size: 12pt; color: #334155; margin-top: 15px; }}
-p {{ margin-bottom: 8px; }}
+h3 {{ font-size: 12pt; color: #334155; margin-top: 14px; }}
+p {{ margin-bottom: 6px; }}
 table {{
     border-collapse: collapse;
     width: 100%;
-    margin: 12px 0;
+    margin: 10px 0;
     font-size: 10pt;
 }}
 th {{
     background-color: #1e3a8a;
     color: white;
-    padding: 8px 10px;
+    padding: 6px 8px;
     text-align: left;
+    border: 1px solid #1e3a8a;
 }}
 td {{
-    border: 1px solid #e2e8f0;
-    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    padding: 6px 8px;
 }}
-tr:nth-child(even) {{ background-color: #f8fafc; }}
 blockquote {{
-    border-left: 4px solid #3b82f6;
-    padding-left: 12px;
+    border-left: 3px solid #3b82f6;
+    padding-left: 10px;
     color: #64748b;
-    margin: 12px 0;
+    margin: 10px 0;
 }}
 strong {{ color: #0f172a; }}
-code {{
-    background-color: #f1f5f9;
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-size: 10pt;
-}}
-hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }}
-ul, ol {{ margin-left: 18px; margin-bottom: 10px; }}
-li {{ margin-bottom: 4px; }}
+hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 16px 0; }}
+ul, ol {{ margin-left: 16px; margin-bottom: 8px; }}
+li {{ margin-bottom: 3px; }}
 @page {{ size: A4; margin: 20mm; }}
 </style></head><body>{html_body}</body></html>"""
-    
-    pdf_bytes = HTML(string=full_html).write_pdf()
-    return pdf_bytes
+
+    # xhtml2pdf 转换
+    result = BytesIO()
+    pisa_status = pisa.CreatePDF(full_html, dest=result, encoding='utf-8')
+    if pisa_status.err:
+        # 如果出错，回退到纯文本 fpdf2 方案
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.add_font('SimHei', '', font_path or 'simhei.ttf', uni=True)
+        pdf.add_page()
+        pdf.set_font('SimHei', '', 11)
+        pdf.multi_cell(0, 7, md_content)
+        return bytes(pdf.output())
+    return result.getvalue()
 
 # ==========================================
 # 4. 左侧边栏
