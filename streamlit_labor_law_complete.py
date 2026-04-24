@@ -685,15 +685,39 @@ def _find_font_path():
 # 模块级字体路径缓存
 _FONT_PATH = _find_font_path()
 
-@st.cache_data(show_spinner=False)
-def create_pdf_report(form_data_json: str, result_json: str):
-    """Markdown → PDF（fpdf2 + SimHei 中文字体，@st.cache_data 缓存）"""
+@st.cache_data(show_spinner=False, hash_funcs={str: lambda x: x})
+def _create_pdf_report_v2(form_data_json: str, result_json: str):
+    """Markdown → PDF（fpdf2 + SimHei 中文字体，@st.cache_data 缓存，异常降级）"""
     from fpdf import FPDF
+    from fpdf.errors import FPDFException
 
     # 反序列化
     form_data = json.loads(form_data_json)
     result_dict = json.loads(result_json)
     md_text = create_markdown_report(form_data, result_dict)
+
+    # 调试：打印 markdown 内容
+    print(f"[PDF] Markdown content:\n{md_text[:500]}...")
+
+    # 文本清洗：只保留 SimHei 字体支持的字符
+    def sanitize(text):
+        result = []
+        for ch in text:
+            cp = ord(ch)
+            if 0x20 <= cp <= 0x7E:        # ASCII 可打印
+                result.append(ch)
+            elif 0x4E00 <= cp <= 0x9FFF:   # CJK 统一汉字
+                result.append(ch)
+            elif 0x3400 <= cp <= 0x4DBF:   # CJK 扩展A
+                result.append(ch)
+            elif 0x3000 <= cp <= 0x303F:   # 中文标点
+                result.append(ch)
+            elif 0xFF00 <= cp <= 0xFFEF:   # 全角符号
+                result.append(ch)
+            elif ch == '\n':               # 换行
+                result.append(ch)
+            # 其他全部跳过
+        return ''.join(result).strip()
 
     # 初始化 PDF
     pdf = FPDF()
@@ -707,116 +731,97 @@ def create_pdf_report(form_data_json: str, result_json: str):
 
     pdf.add_page()
 
-    # 文本清洗：只保留 SimHei 字体支持的字符，彻底避免 FPDFException
-    def sanitize(text):
-        result = []
-        for ch in text:
-            cp = ord(ch)
-            # ASCII 可打印字符 (0x20-0x7E)
-            if 0x20 <= cp <= 0x7E:
-                result.append(ch)
-            # CJK 统一汉字 (0x4E00-0x9FFF)
-            elif 0x4E00 <= cp <= 0x9FFF:
-                result.append(ch)
-            # CJK 扩展A (0x3400-0x4DBF)
-            elif 0x3400 <= cp <= 0x4DBF:
-                result.append(ch)
-            # 中文标点 (0x3000-0x303F) + CJK 符号 (0xFF00-0xFFEF)
-            elif 0x3000 <= cp <= 0x303F:
-                result.append(ch)
-            elif 0xFF00 <= cp <= 0xFFEF:
-                result.append(ch)
-            # 全角/半角数字字母
-            elif 0xFF10 <= cp <= 0xFF19 or 0xFF21 <= cp <= 0xFF3A or 0xFF41 <= cp <= 0xFF5A:
-                result.append(ch)
-            # 换行
-            elif ch == '\n':
-                result.append(ch)
-            # 其他全部跳过（emoji、特殊符号等）
-            else:
-                continue
-        return ''.join(result).strip()
-
-    # 按行解析 Markdown，简洁可靠
+    # 尝试格式化渲染，逐行 try/except
     for line in md_text.split('\n'):
         stripped = line.strip()
-
-        # 空行
         if not stripped:
             continue
 
-        # 水平线
-        if stripped in ('---', '***', '___'):
-            pdf.ln(3)
-            y = pdf.get_y()
-            pdf.set_draw_color(200, 200, 200)
-            pdf.line(10, y, 200, y)
-            pdf.ln(4)
-            continue
-
-        # 标题
-        if stripped.startswith('#'):
-            level = len(stripped) - len(stripped.lstrip('#'))
-            text = sanitize(stripped.lstrip('#').strip().replace('**', ''))
-            if level == 1:
-                pdf.set_font(ff, 'B', 16)
-                pdf.set_text_color(30, 58, 138)
-                pdf.cell(0, 12, text, new_x="LMARGIN", new_y="NEXT", align='C')
-                y = pdf.get_y()
-                pdf.set_draw_color(30, 58, 138)
-                pdf.set_line_width(0.6)
-                pdf.line(10, y, 200, y)
-                pdf.set_line_width(0.2)
-                pdf.ln(5)
-            elif level == 2:
-                pdf.ln(2)
-                pdf.set_font(ff, 'B', 13)
-                pdf.set_text_color(30, 58, 138)
-                pdf.cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
+        try:
+            # 水平线
+            if stripped in ('---', '***', '___'):
                 pdf.ln(3)
-            else:
-                pdf.ln(1)
-                pdf.set_font(ff, 'B', 11)
-                pdf.set_text_color(51, 65, 85)
-                pdf.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-                pdf.ln(2)
-            pdf.set_text_color(0, 0, 0)
-            continue
+                y = pdf.get_y()
+                pdf.set_draw_color(200, 200, 200)
+                pdf.line(10, y, 200, y)
+                pdf.ln(4)
+                continue
 
-        # 引用
-        if stripped.startswith('>'):
-            text = sanitize(stripped.lstrip('>').strip().replace('**', ''))
+            # 标题
+            if stripped.startswith('#'):
+                level = len(stripped) - len(stripped.lstrip('#'))
+                text = sanitize(stripped.lstrip('#').strip().replace('**', ''))
+                if not text:
+                    continue
+                if level == 1:
+                    pdf.set_font(ff, 'B', 16)
+                    pdf.set_text_color(30, 58, 138)
+                    pdf.cell(0, 12, text, new_x="LMARGIN", new_y="NEXT", align='C')
+                    pdf.ln(5)
+                elif level == 2:
+                    pdf.ln(2)
+                    pdf.set_font(ff, 'B', 13)
+                    pdf.set_text_color(30, 58, 138)
+                    pdf.cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(3)
+                else:
+                    pdf.ln(1)
+                    pdf.set_font(ff, 'B', 11)
+                    pdf.set_text_color(51, 65, 85)
+                    pdf.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(2)
+                pdf.set_text_color(0, 0, 0)
+                continue
+
+            # 引用
+            if stripped.startswith('>'):
+                text = sanitize(stripped.lstrip('>').strip().replace('**', ''))
+                if text:
+                    pdf.set_font(ff, '', 10)
+                    pdf.set_text_color(100, 116, 139)
+                    pdf.set_x(16)
+                    pdf.multi_cell(0, 6, text)
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.ln(1)
+                continue
+
+            # 列表项
+            list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
+            if list_m:
+                text = sanitize(re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3)))
+                if text:
+                    bullet = '- ' if list_m.group(2) in ('-', '*') else list_m.group(2) + ' '
+                    pdf.set_font(ff, '', 10)
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.set_x(14)
+                    pdf.multi_cell(0, 6, bullet + text)
+                continue
+
+            # 普通段落
+            text = re.sub(r'\*\*(.*?)\*\*', r'\1', stripped)
+            text = re.sub(r'\*(.*?)\*', r'\1', text)
+            text = re.sub(r'`([^`]+)`', r'\1', text)
+            text = sanitize(text)
+            if not text:
+                continue
             pdf.set_font(ff, '', 10)
-            pdf.set_text_color(100, 116, 139)
-            pdf.set_x(16)
+            pdf.set_text_color(30, 41, 59)
             pdf.multi_cell(0, 6, text)
-            pdf.set_text_color(0, 0, 0)
             pdf.ln(1)
-            continue
 
-        # 列表项
-        list_m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', stripped)
-        if list_m:
-            text = sanitize(re.sub(r'\*\*(.*?)\*\*', r'\1', list_m.group(3)))
-            bullet = '- ' if list_m.group(2) in ('-', '*') else list_m.group(2) + ' '
-            pdf.set_font(ff, '', 10)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_x(14)
-            combined = bullet + text
-            pdf.multi_cell(0, 6, combined)
+        except FPDFException as e:
+            # 单行渲染失败，降级为纯文本写入
+            print(f"[PDF] 跳过问题行: {stripped[:50]}... 错误: {e}")
+            try:
+                pdf.set_font(ff, '', 10)
+                pdf.set_text_color(0, 0, 0)
+                fallback_text = sanitize(re.sub(r'[*#`>]', '', stripped))
+                if fallback_text:
+                    pdf.multi_cell(0, 6, fallback_text)
+                    pdf.ln(1)
+            except Exception:
+                print(f"[PDF] 降级也失败，彻底跳过此行")
             continue
-
-        # 普通段落
-        text = re.sub(r'\*\*(.*?)\*\*', r'\1', stripped)
-        text = re.sub(r'\*(.*?)\*', r'\1', text)
-        text = re.sub(r'`([^`]+)`', r'\1', text)
-        text = sanitize(text)
-        if not text:
-            continue
-        pdf.set_font(ff, '', 10)
-        pdf.set_text_color(30, 41, 59)
-        pdf.multi_cell(0, 6, text)
-        pdf.ln(1)
 
     pdf.set_text_color(0, 0, 0)
     return bytes(pdf.output())
@@ -1029,7 +1034,7 @@ if col_panel is not None:
             # PDF 生成（@st.cache_data 自动缓存，传 JSON 字符串保证可哈希）
             form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
             result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
-            pdf_bytes = create_pdf_report(form_json, result_json)
+            pdf_bytes = _create_pdf_report_v2(form_json, result_json)
             
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
