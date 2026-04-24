@@ -598,14 +598,64 @@ def strip_markdown(text):
     text = re.sub(r'\n\s*\n', '\n\n', text)
     return text.strip()
 
-def create_pure_pdf_report(form_data, result_dict):
+def create_markdown_report(form_data, result_dict):
+    """生成 Markdown 格式的分析报告"""
+    now = datetime.now().strftime('%Y年%m月%d日')
+    
+    md = f"""# 劳动法律深度分析报告
+
+> 生成日期：{now}
+
+---
+
+## 案件基本信息
+
+"""
+    for k, v in form_data.items():
+        if v:
+            md += f"- **{k}**：{v}\n"
+    
+    md += f"""
+
+---
+
+## 一、事实梳理
+
+{result_dict.get('legal_facts_summary', '无数据')}
+
+---
+
+## 二、法条适用分析
+
+{result_dict.get('relevant_laws', '无数据')}
+
+---
+
+## 三、合规审查与最终建议
+
+{result_dict.get('final_review', '无数据')}
+
+---
+
+*本报告由 AI 劳动法智能助理自动生成，仅供参考，不构成法律意见。*
+"""
+    return md
+
+def create_pdf_report(form_data, result_dict):
+    """将 Markdown 报告转换为 PDF（保留 Markdown 格式：表格、加粗、列表等）"""
     from fpdf import FPDF
-    import os
+    import markdown
+    
+    md_content = create_markdown_report(form_data, result_dict)
+    
+    # Markdown → HTML
+    html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
+    
     pdf = FPDF()
     pdf.add_page()
     
+    # 加载中文字体
     font_loaded = False
-    # 优先加载项目目录下的 simhei.ttf（云端部署用），其次尝试本地系统字体
     font_paths = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
         "simhei.ttf",
@@ -617,46 +667,32 @@ def create_pure_pdf_report(form_data, result_dict):
                 pdf.add_font('msyh', '', path)
                 font_loaded = True
                 break
-            except Exception as e:
-                print(f"[PDF字体] 加载 {path} 失败: {e}")
-
-    if not font_loaded:
-        print("[PDF字体] 未找到任何中文字体，PDF中文将无法正常显示")
-
-    def safe_print(title, text, is_title=False):
-        if font_loaded:
-            pdf.set_font('msyh', '', 16 if is_title else 11)
-        else:
-            pdf.set_font('Helvetica', '', 16 if is_title else 11)
-            
-        if is_title:
-            pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
-            pdf.ln(5)
-        else:
-            if font_loaded:
-                pdf.set_font('msyh', '', 12)
-            else:
-                pdf.set_font('Helvetica', 'B', 12)
-            pdf.cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
-            if font_loaded:
-                pdf.set_font('msyh', '', 10)
-            else:
-                pdf.set_font('Helvetica', '', 10)
-            cleaned_text = strip_markdown(text)
-            pdf.multi_cell(0, 6, cleaned_text)
-            pdf.ln(6)
-
-    safe_print("劳动法律深度分析报告", "", is_title=True)
-    info_text = "\n".join([f"- {k}: {v}" for k, v in form_data.items() if v])
-    safe_print("案件基本信息", info_text)
-    safe_print("一、事实梳理", result_dict.get('legal_facts_summary', '无数据'))
-    safe_print("二、法条适用分析", result_dict.get('relevant_laws', '无数据'))
-    safe_print("三、合规审查与最终建议", result_dict.get('final_review', '无数据'))
+            except Exception:
+                pass
     
-    if not font_loaded:
-        pdf.set_text_color(255, 0, 0)
-        pdf.set_font('Helvetica', '', 10)
-        pdf.multi_cell(0, 6, "WARNING: Chinese font not found.")
+    font_family = 'msyh' if font_loaded else 'Helvetica'
+    
+    # 构建完整 HTML（内嵌字体和样式）
+    full_html = f"""<html><head><style>
+    body {{ font-family: {font_family}; font-size: 11pt; color: #1e293b; }}
+    h1 {{ font-size: 20pt; text-align: center; color: #1e3a8a; margin-bottom: 10px; }}
+    h2 {{ font-size: 14pt; color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-top: 20px; }}
+    h3 {{ font-size: 12pt; color: #334155; margin-top: 15px; }}
+    p {{ font-size: 11pt; line-height: 1.6; margin-bottom: 8px; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10pt; }}
+    th {{ background-color: #1e3a8a; color: white; padding: 6px 8px; text-align: left; }}
+    td {{ border: 1px solid #e2e8f0; padding: 6px 8px; }}
+    tr:nth-child(even) {{ background-color: #f8fafc; }}
+    blockquote {{ border-left: 3px solid #3b82f6; padding-left: 10px; color: #64748b; margin: 10px 0; }}
+    strong {{ color: #0f172a; }}
+    em {{ color: #475569; }}
+    code {{ background-color: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-size: 10pt; }}
+    hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 15px 0; }}
+    ul, ol {{ margin-left: 15px; margin-bottom: 8px; }}
+    li {{ margin-bottom: 4px; }}
+    </style></head><body>{html_body}</body></html>"""
+    
+    pdf.write_html(full_html)
     return bytes(pdf.output())
 
 # ==========================================
@@ -845,7 +881,9 @@ if col_panel is not None:
             # --- 纸质感报告预览区 ---
             st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
             
-            pdf_bytes = create_pure_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
+            md_content = create_markdown_report(st.session_state.form_data, st.session_state.analysis_result)
+            pdf_bytes = create_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
+            
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
                 data=pdf_bytes,

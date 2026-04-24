@@ -77,7 +77,7 @@ llm = ChatOpenAI(
     api_key=st.secrets["DASHSCOPE_API_KEY"],
     base_url=st.secrets.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     temperature=0.3,
-    max_tokens=2000
+    max_tokens=4000
 )
 
 # ==========================================
