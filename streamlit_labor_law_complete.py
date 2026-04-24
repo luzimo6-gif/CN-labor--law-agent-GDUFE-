@@ -642,57 +642,133 @@ def create_markdown_report(form_data, result_dict):
     return md
 
 def create_pdf_report(form_data, result_dict):
-    """将 Markdown 报告转换为 PDF（保留 Markdown 格式：表格、加粗、列表等）"""
-    from fpdf import FPDF
+    """Markdown → HTML → PDF（使用 weasyprint，完美支持中文和表格）"""
     import markdown
+    from weasyprint import HTML
     
     md_content = create_markdown_report(form_data, result_dict)
-    
-    # Markdown → HTML
     html_body = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
     
-    pdf = FPDF()
-    pdf.add_page()
-    
-    # 加载中文字体
-    font_loaded = False
-    font_paths = [
+    # 查找中文字体路径（weasyprint 通过 CSS @font-face 加载）
+    font_path = None
+    for p in [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
         "simhei.ttf",
         "C:/Windows/Fonts/simhei.ttf",
+        "/usr/share/fonts/truetype/simhei.ttf",  # Linux 云端备用
+    ]:
+        if os.path.exists(p):
+            font_path = p
+            break
+    
+    font_face_css = ""
+    if font_path:
+        import base64
+        with open(font_path, "rb") as f:
+            font_b64 = base64.b64encode(f.read()).decode()
+        font_face_css = f"""
+        @font-face {{
+            font-family: 'SimHei';
+            src: url(data:font/ttf;base64,{font_b64}) format('truetype');
+            font-weight: normal;
+        }}
+        @font-face {{
+            font-family: 'SimHei';
+            src: url(data:font/ttf;base64,{font_b64}) format('truetype');
+            font-weight: bold;
+        }}
+        """
+    
+    full_html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+{font_face_css}
+body {{
+    font-family: 'SimHei', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-size: 11pt;
+    color: #1e293b;
+    line-height: 1.8;
+    margin: 30px 40px;
+}}
+h1 {{
+    font-size: 22pt;
+    text-align: center;
+    color: #1e3a8a;
+    border-bottom: 3px solid #1e3a8a;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}}
+h2 {{
+    font-size: 15pt;
+    color: #1e3a8a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 5px;
+    margin-top: 25px;
+}}
+h3 {{ font-size: 12pt; color: #334155; margin-top: 15px; }}
+p {{ margin-bottom: 8px; }}
+table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 10pt;
+}}
+th {{
+    background-color: #1e3a8a;
+    color: white;
+    padding: 8px 10px;
+    text-align: left;
+}}
+td {{
+    border: 1px solid #e2e8f0;
+    padding: 8px 10px;
+}}
+tr:nth-child(even) {{ background-color: #f8fafc; }}
+blockquote {{
+    border-left: 4px solid #3b82f6;
+    padding-left: 12px;
+    color: #64748b;
+    margin: 12px 0;
+}}
+strong {{ color: #0f172a; }}
+code {{
+    background-color: #f1f5f9;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 10pt;
+}}
+hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }}
+ul, ol {{ margin-left: 18px; margin-bottom: 10px; }}
+li {{ margin-bottom: 4px; }}
+@page {{ size: A4; margin: 20mm; }}
+</style></head><body>{html_body}</body></html>"""
+    
+    pdf_bytes = HTML(string=full_html).write_pdf()
+    return pdf_bytes
     ]
-    for path in font_paths:
-        if os.path.exists(path):
-            try:
-                pdf.add_font('msyh', '', path)
-                font_loaded = True
-                break
-            except Exception:
-                pass
     
-    font_family = 'msyh' if font_loaded else 'Helvetica'
+    for title, content in sections:
+        pdf.set_draw_color(226, 232, 240)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(5)
+        
+        pdf.set_font(ff, 'B', 14)
+        pdf.set_text_color(30, 58, 138)
+        pdf.cell(0, 9, title, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        
+        pdf.set_font(ff, '', 10)
+        pdf.multi_cell(0, 6, content or '无数据')
+        pdf.ln(5)
     
-    # 构建完整 HTML（内嵌字体和样式）
-    full_html = f"""<html><head><style>
-    body {{ font-family: {font_family}; font-size: 11pt; color: #1e293b; }}
-    h1 {{ font-size: 20pt; text-align: center; color: #1e3a8a; margin-bottom: 10px; }}
-    h2 {{ font-size: 14pt; color: #1e3a8a; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-top: 20px; }}
-    h3 {{ font-size: 12pt; color: #334155; margin-top: 15px; }}
-    p {{ font-size: 11pt; line-height: 1.6; margin-bottom: 8px; }}
-    table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10pt; }}
-    th {{ background-color: #1e3a8a; color: white; padding: 6px 8px; text-align: left; }}
-    td {{ border: 1px solid #e2e8f0; padding: 6px 8px; }}
-    tr:nth-child(even) {{ background-color: #f8fafc; }}
-    blockquote {{ border-left: 3px solid #3b82f6; padding-left: 10px; color: #64748b; margin: 10px 0; }}
-    strong {{ color: #0f172a; }}
-    em {{ color: #475569; }}
-    code {{ background-color: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-size: 10pt; }}
-    hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 15px 0; }}
-    ul, ol {{ margin-left: 15px; margin-bottom: 8px; }}
-    li {{ margin-bottom: 4px; }}
-    </style></head><body>{html_body}</body></html>"""
+    # 底部免责声明
+    pdf.set_draw_color(226, 232, 240)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+    pdf.set_font(ff, '', 9)
+    pdf.set_text_color(100, 116, 139)
+    pdf.multi_cell(0, 5, "本报告由 AI 劳动法智能助理自动生成，仅供参考，不构成法律意见。")
     
-    pdf.write_html(full_html)
     return bytes(pdf.output())
 
 # ==========================================
