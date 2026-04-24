@@ -549,6 +549,8 @@ if 'report_generated' not in st.session_state:
     st.session_state.report_generated = False 
 if 'ai_mode' not in st.session_state:
     st.session_state.ai_mode = "PRO"
+if 'context_round_count' not in st.session_state:
+    st.session_state.context_round_count = 0
 
 # ==========================================
 # 3. 辅助函数
@@ -577,19 +579,59 @@ def parse_ai_message(text):
     return thinking, output
 
 def extract_info_silently(chat_history, current_data):
+    """Context 工程：静默提取信息到右侧卷宗，扩大提取范围"""
     if not chat_history: return current_data
-    prompt = f"""你是一个后台数据提取器。请阅读最新的【聊天记录】，提取关键信息并更新【当前数据】。
+    
+    # 提取更多对话范围，防止遗漏
+    recent_msgs = chat_history[-8:] if len(chat_history) > 8 else chat_history
+    
+    prompt = f"""你是一个后台数据提取器。请仔细阅读【聊天记录】，提取关键信息并更新【当前数据】。
     没提到的保持空字符串 ""。
+    
+    ⚠️ 提取规则：
+    1. 案件发生地：提取具体的城市或省份名称（如"广州"→"广东省广州市"）
+    2. 单位名称：提取公司/单位全称
+    3. 平均月薪：提取具体数字（如"8000"→"8000元/月"）
+    4. 时间节点：提取关键时间点（如"2024年3月入职"→"2024年3月入职"）
+    5. 核心诉求：简练概括用户想要什么（如"要回拖欠的工资和赔偿"）
+    6. 详细经过：将用户描述的事件经过整理为200字以内的摘要
+    
     【当前数据】：{json.dumps(current_data, ensure_ascii=False)}
-    【最近对话】：{[{'role': 'user' if isinstance(m, HumanMessage) else 'ai', 'content': m.content} for m in chat_history[-4:]]}
-    请严格返回包含这6个键的JSON："案件发生地", "单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。(案件发生地请提取具体的城市或省份)"""
+    【最近对话】：{[{'role': 'user' if isinstance(m, HumanMessage) else 'ai', 'content': m.content} for m in recent_msgs]}
+    请严格返回包含这6个键的JSON："案件发生地", "单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。"""
     try:
-        response = llm.invoke([SystemMessage(content="只输出合法JSON"), HumanMessage(content=prompt)])
+        response = llm.invoke([SystemMessage(content="只输出合法JSON，不要输出其他内容"), HumanMessage(content=prompt)])
         clean_json = response.content.replace('```json', '').replace('```', '').strip()
         new_data = json.loads(clean_json)
         return {k: new_data.get(k) if new_data.get(k) else current_data.get(k, "") for k in current_data.keys()}
     except Exception:
         return current_data
+
+def evaluate_form_completeness(form_data):
+    """Context 工程：评估卷宗信息完善度，返回完善百分比和建议"""
+    if not form_data:
+        return 0, [], "卷宗为空，请开始描述案情"
+    
+    total = len(form_data)
+    filled = {k: v for k, v in form_data.items() if v and v.strip()}
+    filled_count = len(filled)
+    missing = [k for k, v in form_data.items() if not v or not v.strip()]
+    pct = int(filled_count / total * 100) if total > 0 else 0
+    
+    # 核心字段权重更高
+    core_fields = ["核心诉求", "详细经过"]
+    core_filled = sum(1 for f in core_fields if form_data.get(f, "").strip())
+    
+    if pct >= 80:
+        suggestion = "信息充分，可以生成报告"
+    elif core_filled >= 1 and pct >= 50:
+        suggestion = f"核心信息已有，建议补充：{'、'.join(missing[:2])}"
+    elif core_filled == 0:
+        suggestion = "缺少核心诉求和案情经过，请继续描述"
+    else:
+        suggestion = f"还需补充：{'、'.join(missing)}"
+    
+    return pct, missing, suggestion
 
 def strip_markdown(text):
     if not text: return ""
@@ -838,6 +880,7 @@ with st.sidebar:
         st.session_state.analysis_result = None
         st.session_state.ready_for_analysis = False
         st.session_state.report_generated = False
+        st.session_state.context_round_count = 0
         st.rerun()
 
 # ==========================================
@@ -974,19 +1017,37 @@ with col_chat:
                 
                 # 3. 只有 PRO 模式才会触发右侧卷宗系统的联动
                 if st.session_state.ai_mode == "PRO":
+                    # Context 工程：对话轮数计数
+                    st.session_state.context_round_count += 1
+                    round_count = st.session_state.context_round_count
+                    
                     # 获取最终状态
                     final_state = app.get_state(config)
                     action = final_state.values.get("triage_result", {}).get("action", "chat")
                     
-                    if action == "form":
-                        st.session_state.ready_for_analysis = True
-                        st.toast("🎯 核心信息已收集完毕！请查看右侧面板。", icon="✅")
-                    else:
-                        st.session_state.ready_for_analysis = False
-                    
                     # 触发静默提取，自动填写右侧表格
                     updated_data = extract_info_silently(st.session_state.messages, st.session_state.form_data)
                     st.session_state.form_data = updated_data
+                    
+                    # Context 工程：评估信息完善度
+                    completeness_pct, missing_fields, suggestion = evaluate_form_completeness(st.session_state.form_data)
+                    
+                    # 判断是否收集完毕（三重判断：AI 判断 + 完善度 + 轮数）
+                    ai_says_ready = action == "form"
+                    data_says_ready = completeness_pct >= 60
+                    rounds_exceeded = round_count >= 10  # 超过10轮强制提示
+                    
+                    if ai_says_ready or data_says_ready:
+                        st.session_state.ready_for_analysis = True
+                        st.toast("🎯 核心信息已收集完毕！请查看右侧面板并生成报告。", icon="✅")
+                    elif rounds_exceeded and completeness_pct >= 40:
+                        st.session_state.ready_for_analysis = True
+                        st.toast(f"⏰ 已对话 {round_count} 轮，信息完善度 {completeness_pct}%。建议生成报告。", icon="📋")
+                    else:
+                        st.session_state.ready_for_analysis = False
+                        # 每5轮对话提示一下完善度
+                        if round_count % 5 == 0 and round_count > 0:
+                            st.toast(f"📊 已对话 {round_count} 轮，信息完善度 {completeness_pct}%。{suggestion}", icon="💡")
                 else:
                     # 快速模式下，永远不提示收集完毕
                     st.session_state.ready_for_analysis = False
@@ -1042,14 +1103,26 @@ if col_panel is not None:
                 st.info("⚡ 当前为**普法模式**，AI 只负责快速解答法律疑问，不收集案件卷宗。如需出具正式案件报告，请在聊天框上方切换至「案件模式」。")
                 
             elif st.session_state.ai_mode == "PRO":
-                # 🎯 空状态 (Empty State) 优化逻辑
+                # Context 工程：显示信息完善度指标
                 is_empty = all(v == "" for v in st.session_state.form_data.values())
+                completeness_pct, missing_fields, suggestion = evaluate_form_completeness(st.session_state.form_data)
                 
                 if st.session_state.ready_for_analysis:
                     st.success("✅ AI 认为信息已充足，请核对下方数据并生成报告。")
                 elif is_empty:
                     st.info("👋 **卷宗目前为空。**\n\n请在左侧向我描述您的案情，我会自动为您提取并填写此处的关键信息。")
                 else:
+                    # 显示完善度进度条
+                    st.markdown(f"""
+                    <div style="margin-bottom: 8px;">
+                        <span style="font-size: 0.85rem; color: #475569;">信息完善度</span>
+                        <span style="float: right; font-size: 0.85rem; font-weight: 600; color: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'};">{completeness_pct}%</span>
+                    </div>
+                    <div style="background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden;">
+                        <div style="background: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'}; height: 100%; width: {completeness_pct}%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">💡 {suggestion}</div>
+                    """, unsafe_allow_html=True)
                     st.caption("左侧沟通时，AI 会自动为您更新下方信息。您也可随时手动修正。")
                 
             with st.form("case_confirmation_form", border=False):

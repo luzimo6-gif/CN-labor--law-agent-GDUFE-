@@ -191,31 +191,57 @@ class QualityOutput(BaseModel):
     feedback: str = Field(description="如果不合格，指出具体修改意见。如果合格，填'无'")
 
 def summarize_conversation_node(state: LaborLawState):
-    """节点0：无损记忆压缩机"""
+    """节点0：Context 工程记忆压缩机（每10轮对话压缩一次）"""
     messages = state.get("messages", [])
     old_summary = state.get("chat_summary", "")
     
-    if len(messages) <= 12:
+    if len(messages) <= 10:
         return {}
         
-    print("\n[CLEAN] 检测到对话超过12条，触发无损记忆压缩...")
-    messages_to_summarize = messages[:-6]
+    print(f"\n[CONTEXT] 检测到对话达到 {len(messages)} 条，触发第 {len(messages)//10} 次 Context 压缩...")
+    # 保留最近4条（2轮完整对话），压缩更早的内容
+    messages_to_summarize = messages[:-4]
     
-    prompt = f"""你是一名极其严谨的法庭书记员。请将下面的【早期对话】与【已有案件档案】合并。
+    # 获取当前卷宗状态，指导压缩时重点保留
+    form_data = state.get("form_data", {})
+    if not form_data:
+        form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
     
-    ⚠️ 绝对禁止省略以下关键信息（如果出现过）：
-    1. 具体的数字（工资数额、索赔金额、工作年限等）
-    2. 具体的时间节点（哪年哪月、几号发生的事情）
-    3. 用户的具体情绪或已经做出的动作
-    4. 公司行为的具体描述
+    missing_fields = [k for k, v in form_data.items() if not v]
+    filled_fields = [f"{k}: {v}" for k, v in form_data.items() if v]
+    missing_hint = f"目前仍缺失的字段：{missing_fields}" if missing_fields else "所有字段已收集完毕"
+    filled_hint = f"已收集到的字段：{'; '.join(filled_fields)}" if filled_fields else "暂无已收集字段"
     
-    【核心限制】：请用精准的要点（Bullet Points）罗列关键事实，去除所有客套话。合并后的总字数必须严格控制在 500 字以内！
-    
-    【已有案件档案】：\n{old_summary if old_summary else "暂无"}
-    
-    【待合并的早期对话】：\n{messages_to_summarize}
-    
-    请直接输出更新后的完整档案文本。"""
+    prompt = f"""你是一名极其严谨的法庭书记员，正在进行 Context 工程压缩。
+
+⚠️ 压缩核心目标：在大幅缩减对话长度的同时，绝对保留所有对填写右侧卷宗有用的信息！
+
+【当前右侧卷宗状态】：
+{filled_hint}
+{missing_hint}
+
+⚠️ 绝对禁止省略以下关键信息（如果出现过）：
+1. 具体的数字（工资数额、索赔金额、工作年限、赔偿金额等）
+2. 具体的时间节点（哪年哪月入职/离职/发生争议，几号）
+3. 具体的地点（城市、省份）
+4. 公司/单位的具体名称和行为
+5. 用户的核心诉求和情绪
+6. 任何与缺失字段「{missing_fields}」相关的线索
+
+⚠️ 可以安全省略的内容：
+- 问候、寒暄、客套话
+- AI 的重复解释和安抚
+- 已在卷宗中明确记录的信息（但保留细节补充）
+
+【核心限制】：请用精准的要点（Bullet Points）罗列关键事实。合并后的总字数必须严格控制在 600 字以内！
+
+【已有案件档案】：
+{old_summary if old_summary else "暂无"}
+
+【待压缩的早期对话】：
+{messages_to_summarize}
+
+请直接输出更新后的完整档案文本。"""
     
     response = llm.invoke([HumanMessage(content=prompt)])
     new_summary = response.content
@@ -227,33 +253,71 @@ def summarize_conversation_node(state: LaborLawState):
     }
 
 def triage_node(state: LaborLawState) -> LaborLawState:
-    """节点1：前台分诊"""
+    """节点1：前台分诊 + Context 工程信息完善度审视"""
     print("\n[AI] [分诊台 AI] 正在结合右侧卷宗与聊天记录分析意图...")
     chat_history = state.get("messages", [])
     summary = state.get("chat_summary", "")
-    summary_text = f"\n【⚠️ 长期背景案件档案】：\n{summary}" if summary else ""
+    summary_text = f"\n【⚠️ 长期背景案件档案（压缩后的历史记忆）】：\n{summary}" if summary else ""
     
     form_data = state.get("form_data", {})
     if not form_data: 
         form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
         
+    # 信息完善度分析
+    filled = {k: v for k, v in form_data.items() if v}
+    missing = [k for k, v in form_data.items() if not v]
+    total_fields = len(form_data)
+    filled_count = len(filled)
+    completeness_pct = int(filled_count / total_fields * 100) if total_fields > 0 else 0
+    
     form_status = "\n".join([
-        f"- {k}: {v if v else '❌ [缺失，待补充]'}" 
+        f"- {k}: ✅ {v}" if v else f"- {k}: ❌ [缺失，待补充]"
         for k, v in form_data.items()
     ])
     
-    prompt = f"""你是一个专业的劳动法律师前台分诊智能体。
-    在开口前，请务必仔细核对【当前右侧卷宗状态】。
+    # 判断是否刚经历过压缩（summary 非空且对话很短说明刚压缩完）
+    is_post_compression = bool(summary) and len(chat_history) <= 6
+    
+    compression_note = ""
+    if is_post_compression:
+        compression_note = f"""
+【🔔 Context 压缩后审视指令（重要！）】：
+刚刚完成了对话记忆压缩。请你现在做两件事：
+1. 仔细审视右侧卷宗中每个字段的状态，检查是否有信息遗漏或矛盾
+2. 根据缺失字段，规划下一个最关键的问题来完善信息
+3. 如果核心信息（至少有：案件发生地、核心诉求、详细经过）已齐全，请立即转交表单
+"""
+    
+    # 核心信息判断：至少3个关键字段已填写
+    core_fields = ["核心诉求", "详细经过"]
+    core_filled = sum(1 for f in core_fields if form_data.get(f, ""))
+    has_basic_info = filled_count >= 3 and core_filled >= 1
+    
+    completeness_note = f"""
+【📊 当前信息完善度】：{completeness_pct}%（{filled_count}/{total_fields} 项已填写）
+已收集：{list(filled.keys()) if filled else '无'}
+待补充：{missing if missing else '无'}
+{'✅ 核心信息基本充足，如用户不再补充细节，可考虑转交分析。' if has_basic_info else '⚠️ 核心信息仍然不足，需要继续追问。'}
+"""
+    
+    prompt = f"""你是一个专业的劳动法律师前台分诊智能体，同时负责 Context 工程中的信息完善度管理。
+    在开口前，请务必仔细核对【当前右侧卷宗状态】和【信息完善度】。
     
     【当前右侧卷宗状态】：
     {form_status}
     {summary_text}
     
+    {completeness_note}
+    {compression_note}
+    
     【Copilot 极严格提问与引导策略】：
-    1. 审视上面的卷宗。如果某个字段已经有具体内容，**绝对禁止**再次询问相关信息！
-    2. 只有当发现带有"❌ [缺失，待补充]"的字段时，才可以提问。
-    3. 每次**只挑选 1 个最关键的缺失字段**进行自然追问。在追问时，你可以非常自然地告诉用户："我已经将您的XX信息自动记录在右侧表格中了，请问您的YY是什么？"
-    4. 如果所有核心信息已经基本收齐，或者用户明确要求"出报告/开始分析"，请立即转交表单，停止任何追问。
+    1. 审视卷宗和信息完善度。如果某个字段已有具体内容，**绝对禁止**再次询问！
+    2. 只有发现"❌ [缺失，待补充]"的字段时，才可以提问。
+    3. 每次**只挑选 1 个最关键的缺失字段**进行自然追问。优先级：核心诉求 > 详细经过 > 案件发生地 > 时间节点 > 单位名称 > 平均月薪。
+    4. 追问时自然告诉用户："我已经将您的XX信息记录在右侧表格中了，请问您的YY是什么？"
+    5. **关键判断**：如果信息完善度 ≥ 60%，且核心诉求和详细经过至少有1个已填写，且用户没有主动补充更多细节的意愿，请将 action 设为 "form"，表示信息收集完毕。
+    6. 如果用户明确说"够了""出报告""开始分析"等，立即设 action 为 "form"。
+    7. 如果用户在提供新信息，即使完善度较高，也应继续 chat 以收集更多细节，除非已超10轮对话。
     """
     messages_for_llm = [SystemMessage(content=prompt)] + chat_history
     
@@ -268,7 +332,7 @@ def triage_node(state: LaborLawState) -> LaborLawState:
         print(f"[ERROR] 分诊台结构化输出失败: {e}")
         triage_result = {"action": "chat", "category": "系统降级", "reply": "抱歉，系统刚刚开小差了，您可以再详细描述一下您的诉求吗？"}
     
-    print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}")
+    print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}, 完善度: {completeness_pct}%")
     ai_reply_message = AIMessage(content=triage_result["reply"])
     return {"triage_result": triage_result, "messages": [ai_reply_message]}
 
