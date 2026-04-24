@@ -80,13 +80,13 @@ llm = ChatOpenAI(
     max_tokens=4000
 )
 
-# 轻量级 LLM：用于 triage、query rewrite 等短输出场景，提速明显
+# 轻量级 LLM：用于 triage、query rewrite、质检等场景，保留足够输出长度
 llm_fast = ChatOpenAI(
     model="qwen-plus",
     api_key=st.secrets["DASHSCOPE_API_KEY"],
     base_url=st.secrets.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     temperature=0.1,
-    max_tokens=1500
+    max_tokens=3000
 )
 
 # ==========================================
@@ -354,13 +354,14 @@ def extract_output(text: str) -> str:
     return text.strip()
 
 def fact_summarizer_node(state: LaborLawState) -> LaborLawState:
-    """节点2：事实梳理员（使用轻量 LLM 提速）"""
+    """节点2：事实梳理员（使用轻量 LLM 提速，保留思考链）"""
     form_data = state.get("form_data", {})
     form_text = "\n".join([f"- {k}: {v}" for k, v in form_data.items()])
     prompt = f"""请根据以下案件信息梳理关键事实：\n【用户表单提交信息】：\n{form_text}
-    直接输出：1. 争议焦点 2. 关键时间节点 3. 证据情况分析 4. 法律适用预判。无需思考过程。"""
-    messages = [SystemMessage(content="你是劳动法律师助理，直接输出分析结果"), HumanMessage(content=prompt)]
-    return {"legal_facts_summary": llm_fast.invoke(messages).content}
+    请你必须先在 <thinking> 标签内进行沙盘推演和逻辑自洽检查。
+    思考完成后，再在 <output> 标签内梳理：1. 争议焦点 2. 关键时间节点 3. 证据情况分析 4. 法律适用预判"""
+    messages = [SystemMessage(content="你是劳动法律师助理"), HumanMessage(content=prompt)]
+    return {"legal_facts_summary": extract_output(llm_fast.invoke(messages).content)}
 
 def legal_researcher_node(state: LaborLawState) -> LaborLawState:
     """节点3：法条检索 + 案例参考（合并原并行双节点，减少1次LLM调用）"""
@@ -401,14 +402,15 @@ def legal_researcher_node(state: LaborLawState) -> LaborLawState:
     【案件事实】：{summary}
     【相关法条】：{relevant_docs}
     
-    请直接输出（无需思考过程）：
+    请在 <thinking> 标签中排查法条冲突（注意特别法优于一般法，上位法优于下位法）。
+    思考后在 <output> 标签输出：
     ## 法条适用分析
     1. 适用具体法律条款 2. 适用说明 3. 赔偿计算依据 4. 程序建议
 
     ## 参考案例要旨
     简述1个国内劳动争议领域的典型相似判例要旨及对本案参考价值。"""
-    messages = [SystemMessage(content="你是精通法理的资深专家，直接输出分析结果"), HumanMessage(content=prompt)]
-    result = llm.invoke(messages).content
+    messages = [SystemMessage(content="你是精通法理的资深专家"), HumanMessage(content=prompt)]
+    result = extract_output(llm.invoke(messages).content)
     return {"relevant_laws": result, "similar_cases": ""}
 
 def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
@@ -425,9 +427,9 @@ def compliance_reviewer_node(state: LaborLawState) -> LaborLawState:
         print(f"⚠️ 收到主编修改意见，开始重写：{feedback}")
         prompt += f"\n\n【主编打回修改意见】：\n{feedback}\n请务必严格修正上述漏洞！"
         
-    prompt += "\n\n请直接提供（无需思考过程）：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"
-    messages = [SystemMessage(content="你是资深劳动法律师，直接输出最终建议"), HumanMessage(content=prompt)]
-    return {"final_review": llm.invoke(messages).content}
+    prompt += "\n\n请在 <thinking> 标签内审视前置分析有无漏洞。思考后在 <output> 标签提供：1. 最终法律建议 2. 操作步骤 3. 风险提示 4. 沟通策略 5. 证据建议"
+    messages = [SystemMessage(content="你是资深劳动法律师"), HumanMessage(content=prompt)]
+    return {"final_review": extract_output(llm.invoke(messages).content)}
 
 # 🌟 新增：质检员把关
 def quality_inspector_node(state: LaborLawState) -> LaborLawState:
