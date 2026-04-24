@@ -684,25 +684,35 @@ def create_markdown_report(form_data, result_dict):
 """
     return md
 
-def create_pdf_report(form_data, result_dict):
-    """Markdown → 格式化 PDF（使用 fpdf2，手动解析 Markdown 结构）"""
+def _find_font_path():
+    """查找中文字体（仅相对路径，兼容 Streamlit Cloud Linux 环境）"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "simhei.ttf"),
+        os.path.join(base_dir, "fonts", "simhei.ttf"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+# 模块级字体路径缓存，避免每次调用重复查找
+_FONT_PATH = _find_font_path()
+
+@st.cache_data(show_spinner=False)
+def create_pdf_report(form_data_json: str, result_json: str):
+    """Markdown → 格式化 PDF（fpdf2，@st.cache_data 缓存，仅相对路径）"""
     from fpdf import FPDF
-    import re
+    import re as _re
+
+    # 反序列化参数
+    form_data = json.loads(form_data_json)
+    result_dict = json.loads(result_json)
 
     md_content = create_markdown_report(form_data, result_dict)
 
-    # 查找中文字体
-    font_path = None
+    font_path = _FONT_PATH
     ff = 'Helvetica'
-    for p in [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
-        "simhei.ttf",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/truetype/simhei.ttf",
-    ]:
-        if os.path.exists(p):
-            font_path = p
-            break
 
     pdf = FPDF()
     if font_path:
@@ -882,8 +892,6 @@ with st.sidebar:
         st.session_state.ready_for_analysis = False
         st.session_state.report_generated = False
         st.session_state.context_round_count = 0
-        st.session_state.cached_pdf_bytes = None
-        st.session_state.pdf_cache_key = None
         st.rerun()
 
 # ==========================================
@@ -1069,13 +1077,10 @@ if col_panel is not None:
             # --- 纸质感报告预览区 --- 
             st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
             
-            # PDF 缓存：只在首次生成，后续直接读取
-            if 'cached_pdf_bytes' not in st.session_state or st.session_state.get('pdf_cache_key') != str(st.session_state.analysis_result):
-                pdf_bytes = create_pdf_report(st.session_state.form_data, st.session_state.analysis_result)
-                st.session_state.cached_pdf_bytes = pdf_bytes
-                st.session_state.pdf_cache_key = str(st.session_state.analysis_result)
-            else:
-                pdf_bytes = st.session_state.cached_pdf_bytes
+            # PDF 生成（@st.cache_data 自动缓存，传 JSON 字符串保证可哈希）
+            form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
+            result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
+            pdf_bytes = create_pdf_report(form_json, result_json)
             
             st.download_button(
                 label="📥 下载 PDF 格式正式报告",
@@ -1157,59 +1162,76 @@ if col_panel is not None:
                         }
                         st.session_state.form_data = final_form
                         
-                        with st.spinner("⚖️ 多智能体正在后台进行法条检索与深度推演，请稍候..."):
+                        # 节点中文名映射
+                        node_labels = {
+                            "fact_summarizer": "📋 事实梳理员",
+                            "legal_researcher": "📚 法条检索专员",
+                            "compliance_reviewer": "⚖️ 合规审核员",
+                            "quality_inspector": "🔍 主编质检员",
+                        }
+                        
+                        with st.status("⚖️ 多智能体正在后台推演案情...", expanded=True) as status:
                             config = {"configurable": {"thread_id": st.session_state.thread_id}}
                             
-                            # 检查当前 LangGraph 状态，判断是否已经过 triage 并中断在 fact_summarizer 之前
+                            # 检查当前 LangGraph 状态
                             try:
                                 current_state = app.get_state(config)
                                 next_steps = current_state.next if hasattr(current_state, 'next') else []
                             except:
                                 next_steps = []
                             
-                            if next_steps and 'fact_summarizer' in next_steps:
+                            use_direct = not (next_steps and 'fact_summarizer' in next_steps)
+                            
+                            if not use_direct:
                                 # 正常流程：已通过 triage，从中断点恢复
                                 app.update_state(config, {"form_data": final_form})
-                                final_result = app.invoke(None, config)
+                                active_config = config
                             else:
-                                # 强制生成：未经过 triage，直接启动完整分析流程
+                                # 强制生成：直接启动完整分析流程
                                 from langchain_core.messages import HumanMessage, SystemMessage
                                 case_msg = HumanMessage(content=f"请分析以下劳动法案件：\n" + "\n".join([f"{k}：{v}" for k, v in final_form.items() if v]))
-                                # 使用新的 thread_id 避免旧状态干扰
                                 new_thread = st.session_state.thread_id + "_direct"
-                                config_direct = {"configurable": {"thread_id": new_thread}}
-                                # 先触发 triage 让它走到 interrupt_before
-                                init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, config_direct)
-                                # 检查 triage 结果，如果是 chat 模式则强制改为 form
-                                triage_res = init_result.get("triage_result", {})
+                                active_config = {"configurable": {"thread_id": new_thread}}
+                                # 先触发 triage 走到 interrupt_before
+                                init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, active_config)
+                                triage_res = init_result.get("triage_result", {}) if isinstance(init_result, dict) else {}
                                 if triage_res.get("action") != "form":
-                                    app.update_state(config_direct, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
-                                app.update_state(config_direct, {"form_data": final_form})
-                                final_result = app.invoke(None, config_direct)
+                                    app.update_state(active_config, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
+                                app.update_state(active_config, {"form_data": final_form})
                             
-                            # 稳健提取：兼容不同 LangGraph 版本的返回格式
-                            if isinstance(final_result, dict):
+                            # 🌟 LangGraph 流式输出
+                            st.write("🚀 分析流水线已启动...")
+                            completed_nodes = set()
+                            
+                            try:
+                                for event in app.stream(None, active_config):
+                                    # event 格式: {node_name: output_dict}
+                                    if isinstance(event, dict):
+                                        for node_name in event.keys():
+                                            if node_name not in completed_nodes and node_name != "summarizer" and node_name != "triage":
+                                                label = node_labels.get(node_name, node_name)
+                                                st.write(f"✅ {label} 已完成工作")
+                                                completed_nodes.add(node_name)
+                            except Exception as e:
+                                st.write(f"⚠️ 流式输出中断: {e}")
+                            
+                            # 获取最终状态
+                            try:
+                                final_state = app.get_state(active_config)
+                                state_values = final_state.values if hasattr(final_state, 'values') else {}
                                 analysis = {
-                                    "legal_facts_summary": final_result.get("legal_facts_summary", ""),
-                                    "relevant_laws": final_result.get("relevant_laws", ""),
-                                    "final_review": final_result.get("final_review", ""),
+                                    "legal_facts_summary": state_values.get("legal_facts_summary", ""),
+                                    "relevant_laws": state_values.get("relevant_laws", ""),
+                                    "final_review": state_values.get("final_review", ""),
                                 }
-                            else:
-                                try:
-                                    cfg = config if next_steps and 'fact_summarizer' in next_steps else config_direct
-                                    state = app.get_state(cfg)
-                                    state_values = state.values if hasattr(state, 'values') else {}
-                                    analysis = {
-                                        "legal_facts_summary": state_values.get("legal_facts_summary", ""),
-                                        "relevant_laws": state_values.get("relevant_laws", ""),
-                                        "final_review": state_values.get("final_review", ""),
-                                    }
-                                except:
-                                    analysis = {"legal_facts_summary": str(final_result), "relevant_laws": "", "final_review": ""}
+                            except Exception:
+                                analysis = {"legal_facts_summary": "分析完成", "relevant_laws": "", "final_review": ""}
                             
-                            st.session_state.analysis_result = analysis
-                            st.session_state.messages = [] 
-                            st.session_state.report_generated = True 
+                            status.update(label="✅ 深度分析完成！", state="complete", expanded=False)
+                        
+                        st.session_state.analysis_result = analysis
+                        st.session_state.messages = [] 
+                        st.session_state.report_generated = True 
                         st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
