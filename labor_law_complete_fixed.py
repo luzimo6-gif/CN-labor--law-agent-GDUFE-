@@ -423,42 +423,29 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     core_filled = sum(1 for f in core_fields if form_data.get(f, ""))
     has_basic_info = filled_count >= 3 and core_filled >= 1
     
-    completeness_note = f"""
-【📊 当前信息完善度】：{completeness_pct}%（{filled_count}/{total_fields} 项已填写）
-已收集：{list(filled.keys()) if filled else '无'}
-待补充：{missing if missing else '无'}
-{'✅ 核心信息基本充足，如用户不再补充细节，可考虑转交分析。' if has_basic_info else '⚠️ 核心信息仍然不足，需要继续追问。'}
-"""
-    
-    prompt = f"""你是一个专业的劳动法律师前台分诊智能体，同时负责 Context 工程中的信息完善度管理。
-    在开口前，请务必仔细核对【当前右侧卷宗状态】和【信息完善度】。
-    
-    【当前右侧卷宗状态】：
-    {form_status}
-    {summary_text}
-    
-    {completeness_note}
-    {compression_note}
-    
-    【Copilot 极严格提问与引导策略】：
-    1. 审视卷宗和信息完善度。如果某个字段已有具体内容，**绝对禁止**再次询问！
-    2. 只有发现"❌ [缺失，待补充]"的字段时，才可以提问。
-    3. 每次**只挑选 1 个最关键的缺失字段**进行自然追问。优先级：核心诉求 > 详细经过 > 案件发生地 > 时间节点 > 单位名称 > 平均月薪。
-    4. 追问时自然告诉用户："我已经将您的XX信息记录在右侧表格中了，请问您的YY是什么？"
-    5. **关键判断**：如果信息完善度 ≥ 60%，且核心诉求和详细经过至少有1个已填写，且用户没有主动补充更多细节的意愿，请将 action 设为 "form"，表示信息收集完毕。
-    6. 如果用户明确说"够了""出报告""开始分析"等，立即设 action 为 "form"。
-    7. 如果用户在提供新信息，即使完善度较高，也应继续 chat 以收集更多细节，除非已超10轮对话。
+    # 精简版状态提示，省去不必要的长句子
+    prompt = f"""你是一名劳动法律师助理。任务：根据【卷宗】判断并回复。
 
-【核心输出指令】
-请你必须先在 <thinking> 标签内进行完整的思考和推理（包括判断信息完善度、分析用户意图、决定追问策略等）。
-思考完成后，在 <output> 标签内严格输出一个合法的 JSON，绝对不要有其他废话。JSON 必须包含以下三个字段：
+【当前卷宗】：
+{form_status}
+{summary_text}
+完善度: {completeness_pct}%。{'可转交报告' if has_basic_info else '需继续追问'}
+{compression_note}
+
+【核心指令】：
+1. 绝不重复询问已填字段。每次只自然追问1个核心缺失字段。
+2. 若完善度≥60%且含核心诉求/经过，或用户要求出报告，设action="form"，否则为"chat"。
+
+【严格输出格式】
+必须先输出极简思考(省token)，再输出JSON：
+<thinking>用一句话简述缺什么、该问什么或是否结束收集（50字内）</thinking>
+<output>
 {{
     "action": "chat" 或 "form",
-    "category": "意图分类（如：讨薪、违规辞退等）",
-    "reply": "只放最终要展示给用户的回复文字，禁止包含任何推理过程、判断依据或系统指令相关内容"
+    "category": "案件分类",
+    "reply": "直接发给用户的自然语言回复，不要有任何废话"
 }}
-
-⚠️ reply 字段严格要求：只放用户能直接看到的自然语言回复，所有思考、分析、推理必须放在 <thinking> 标签内！"""
+</output>"""
     messages_for_llm = [SystemMessage(content=prompt)]
     # 只传 HumanMessage，避免旧 AIMessage 中的 thinking 标签污染 LLM 上下文
     for msg in chat_history:
