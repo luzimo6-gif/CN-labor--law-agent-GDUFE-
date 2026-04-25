@@ -559,7 +559,7 @@ if 'context_round_count' not in st.session_state:
 # 3. 辅助函数
 # ==========================================
 def parse_ai_message(text):
-    """解析包含 <thinking> 标签的AI回复，彻底剥离思考过程与最终输出，并强力清洗 JSON 外泄"""
+    """解析包含 <thinking> 标签的AI回复，剥离思考过程与最终输出"""
     thinking = ""
     output = text
     
@@ -569,16 +569,11 @@ def parse_ai_message(text):
         thinking = parts[0].replace("<thinking>", "").strip()
         output = parts[1].strip() if len(parts) > 1 else ""
     
-    # 2. 强力清洗输出正文中的 JSON 外壳
+    # 2. 清理输出正文中的 markdown 代码块包裹
     output = output.strip()
-    json_match = re.search(r'"reply"\s*:\s*"([^"]+)"', output)
-    if json_match:
-        output = json_match.group(1).replace('\\n', '\n')
-    else:
-        output = re.sub(r'^```json\s*', '', output)
-        output = re.sub(r'```$', '', output).strip()
-        output = re.sub(r'^\{[\s\S]*?\}\s*', '', output).strip()
-
+    output = re.sub(r'^```(?:json)?\s*', '', output)
+    output = re.sub(r'```$', '', output).strip()
+    
     return thinking, output
 
 def extract_info_silently(chat_history, current_data):

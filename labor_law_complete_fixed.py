@@ -337,7 +337,18 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     "category": "意图分类（如：讨薪、违规辞退等）",
     "reply": "直接回复给用户的话术"
 }}"""
-    messages_for_llm = [SystemMessage(content=prompt)] + chat_history
+    messages_for_llm = [SystemMessage(content=prompt)]
+    # 只传 HumanMessage，避免旧 AIMessage 中的 thinking 标签污染 LLM 上下文
+    for msg in chat_history:
+        if isinstance(msg, HumanMessage):
+            messages_for_llm.append(msg)
+        elif isinstance(msg, AIMessage):
+            # AIMessage 只传纯文本内容（去掉 thinking 标签），避免上下文污染
+            clean = msg.content
+            if "<thinking>" in clean and "</thinking>" in clean:
+                clean = re.sub(r'<thinking>.*?</thinking>', '', clean, flags=re.DOTALL).strip()
+            if clean:
+                messages_for_llm.append(AIMessage(content=clean))
     
     # ── 原生 LLM 调用 + 手动正则解析 ──
     try:
@@ -401,11 +412,12 @@ def triage_node(state: LaborLawState) -> LaborLawState:
         }
         print(f"[TRIAGE] 兜底模式: action={action}")
     
-    # 拼接消息体：<thinking>标签 + reply，确保前端 parse_ai_message 正常工作
-    ai_content = ""
+    # AIMessage 只放纯回复文本，不放 thinking 标签
+    # thinking 过程仅在服务端日志中记录，避免污染前端和后续 LLM 上下文
+    ai_content = triage_result["reply"]
+    
     if thinking_text:
-        ai_content += f"<thinking>{thinking_text}</thinking>\n"
-    ai_content += triage_result["reply"]
+        print(f"[TRIAGE] 思考过程: {thinking_text[:200]}...")
     
     print(f"[TARGET] [意图识别结果] 动作: {triage_result['action']}, 分类: {triage_result['category']}, 完善度: {completeness_pct}%")
     ai_reply_message = AIMessage(content=ai_content)
