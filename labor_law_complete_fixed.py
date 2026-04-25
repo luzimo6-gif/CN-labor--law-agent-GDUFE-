@@ -34,7 +34,7 @@ class DashScopeEmbeddings(Embeddings):
     def __init__(self, api_key: str, model: str = "text-embedding-v2"):
         self.api_key = api_key
         self.model = model
-        self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        self.base_url = st.secrets.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         import requests
