@@ -351,12 +351,22 @@ def triage_node(state: LaborLawState) -> LaborLawState:
                 messages_for_llm.append(AIMessage(content=clean))
     
     # ── 原生 LLM 调用 + 手动正则解析 ──
+    last_error = ""
     try:
         raw_output = llm_fast.invoke(messages_for_llm).content
-        print(f"[TRIAGE] LLM 原始输出: {raw_output[:300]}...")
+        print(f"[TRIAGE] LLM 原始输出: {raw_output[:500]}...")
     except Exception as e:
-        print(f"[ERROR] 分诊台 LLM 调用失败: {type(e).__name__}: {e}")
-        raw_output = ""
+        last_error = f"LLM调用失败: {type(e).__name__}: {e}"
+        print(f"[ERROR] 分诊台 {last_error}")
+        # 重试一次用 llm
+        try:
+            raw_output = llm.invoke(messages_for_llm).content
+            print(f"[TRIAGE] 重试成功: {raw_output[:300]}...")
+            last_error = ""
+        except Exception as e2:
+            last_error = f"LLM重试也失败: {type(e2).__name__}: {e2}"
+            print(f"[ERROR] 分诊台 {last_error}")
+            raw_output = ""
     
     # 提取 <thinking> 和 <output>
     thinking_text = ""
@@ -375,6 +385,9 @@ def triage_node(state: LaborLawState) -> LaborLawState:
             after_think = re.search(r'</thinking>(.*)', raw_output, re.DOTALL)
             if after_think:
                 output_text = after_think.group(1).strip()
+            else:
+                # 完全没有标签结构，把整个输出当 output
+                output_text = raw_output.strip()
     
     # 解析 JSON
     triage_result = None
@@ -398,13 +411,26 @@ def triage_node(state: LaborLawState) -> LaborLawState:
             except json.JSONDecodeError as e:
                 print(f"[WARNING] JSON 解析失败: {e}, 原文: {json_str[:200]}")
     
-    # 兜底：如果 JSON 解析失败，从原始输出中推断
+    # 兜底：如果 JSON 解析失败
     if not triage_result:
-        reply_text = raw_output if raw_output else "抱歉，系统处理出现异常，请您再描述一下您的诉求。"
-        # 尝试从输出中推断 action
+        # 推断 action
         action = "chat"
-        if "form" in output_text.lower() or "转交" in output_text or "信息收集完毕" in output_text:
+        if output_text and ("form" in output_text.lower() or "转交" in output_text or "信息收集完毕" in output_text):
             action = "form"
+        
+        # 尝试用原始 LLM 输出作为回复（而不是报错）
+        if raw_output and len(raw_output.strip()) > 10:
+            # LLM 返回了内容但不是 JSON 格式，直接把自然语言当回复
+            reply_text = raw_output.strip()
+            # 清理可能残留的标签
+            reply_text = re.sub(r'</?thinking>', '', reply_text).strip()
+            reply_text = re.sub(r'</?output>', '', reply_text).strip()
+            print(f"[TRIAGE] 兜底模式：使用原始输出作为回复（前50字）: {reply_text[:50]}...")
+        elif last_error:
+            reply_text = f"[调试信息] 分诊台错误: {last_error}。请检查 API Key 和网络配置。"
+        else:
+            reply_text = "您好，我是劳动法智能助理，请问有什么可以帮您的？"
+        
         triage_result = {
             "action": action,
             "category": "通用咨询",
