@@ -569,10 +569,30 @@ def parse_ai_message(text):
         thinking = parts[0].replace("<thinking>", "").strip()
         output = parts[1].strip() if len(parts) > 1 else ""
     
-    # 2. 清理输出正文中的 markdown 代码块包裹
+    # 2. 如果输出包含 <output> 标签中的 JSON，提取 reply 字段
     output = output.strip()
-    output = re.sub(r'^```(?:json)?\s*', '', output)
-    output = re.sub(r'```$', '', output).strip()
+    out_match = re.search(r'<output>(.*?)</output>', output, re.DOTALL)
+    if out_match:
+        json_str = out_match.group(1).strip()
+        # 清理 markdown 代码块
+        json_str = re.sub(r'^```(?:json)?\s*', '', json_str)
+        json_str = re.sub(r'\s*```$', '', json_str)
+        try:
+            parsed = json.loads(json_str)
+            if isinstance(parsed, dict) and "reply" in parsed:
+                output = parsed["reply"]
+        except (json.JSONDecodeError, ValueError):
+            # JSON 解析失败，尝试用正则提取 reply
+            reply_match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str)
+            if reply_match:
+                output = reply_match.group(1).replace('\\n', '\n')
+            else:
+                # 去掉 <output> 标签，保留内容
+                output = re.sub(r'</?output>', '', output)
+    else:
+        # 没有 <output> 标签，清理可能残留的 JSON 外壳
+        output = re.sub(r'^```(?:json)?\s*', '', output)
+        output = re.sub(r'```$', '', output).strip()
     
     return thinking, output
 
