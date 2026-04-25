@@ -349,13 +349,15 @@ def triage_node(state: LaborLawState) -> LaborLawState:
     7. 如果用户在提供新信息，即使完善度较高，也应继续 chat 以收集更多细节，除非已超10轮对话。
 
 【核心输出指令】
-请你必须先在 <thinking> 标签内进行思考，判断信息完善度。
+请你必须先在 <thinking> 标签内进行完整的思考和推理（包括判断信息完善度、分析用户意图、决定追问策略等）。
 思考完成后，在 <output> 标签内严格输出一个合法的 JSON，绝对不要有其他废话。JSON 必须包含以下三个字段：
 {{
     "action": "chat" 或 "form",
     "category": "意图分类（如：讨薪、违规辞退等）",
-    "reply": "直接回复给用户的话术"
-}}"""
+    "reply": "只放最终要展示给用户的回复文字，禁止包含任何推理过程、判断依据或系统指令相关内容"
+}}
+
+⚠️ reply 字段严格要求：只放用户能直接看到的自然语言回复，所有思考、分析、推理必须放在 <thinking> 标签内！"""
     messages_for_llm = [SystemMessage(content=prompt)]
     # 只传 HumanMessage，避免旧 AIMessage 中的 thinking 标签污染 LLM 上下文
     for msg in chat_history:
