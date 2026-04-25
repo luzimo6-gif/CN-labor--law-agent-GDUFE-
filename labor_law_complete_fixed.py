@@ -281,105 +281,8 @@ def summarize_conversation_node(state: LaborLawState):
         "messages": delete_messages 
     }
 
-def _clean_reply(reply_text):
-    """清洗 triage reply：分离推理性文字和最终用户可见回复。
-    模型常把推理过程塞进 reply 字段，且常在末尾重复一遍最终回复。
-    策略：找到重复的段落，取最后一段作为回复，前面的都是推理。
-    返回 (cleaned_reply, extra_thinking)
-    """
-    if not reply_text:
-        return "", ""
-    
-    text = reply_text.strip()
-    
-    # 策略1：按"空行+换行"分段（段落间有空行分隔）
-    # 如果模型输出 "推理段落\n\n回复段落"，直接取最后一段
-    paragraphs = re.split(r'\n\s*\n', text)
-    paragraphs = [p.strip() for p in paragraphs if p.strip()]
-    
-    if len(paragraphs) >= 2:
-        # 检查是否有段落重复（模型常在推理后重复最终回复）
-        # 找最后一段在前面是否出现过类似内容
-        last_para = paragraphs[-1]
-        
-        # 如果最后一段是简短的纯回复（<=150字），且前面的段落更长（包含推理），
-        # 那么前面的段落都是推理，最后一段是回复
-        reasoning_parts = []
-        for p in paragraphs[:-1]:
-            if len(p) > len(last_para) * 0.8:
-                # 前面的段落更长，大概率包含推理
-                reasoning_parts.append(p)
-            elif any(kw in p for kw in ['因此', '我需', '我应', '系统', '模式', '指令', '跳过', '遵循', '无需']):
-                reasoning_parts.append(p)
-            else:
-                # 短段落且不含推理关键词，可能是正常回复的一部分
-                pass
-        
-        if reasoning_parts:
-            extra_thinking = '\n'.join(reasoning_parts)
-            return last_para, extra_thinking
-    
-    # 策略2：单段文本中寻找重复句子
-    # 模型常输出 "推理...。最终回复...。最终回复（重复）"
-    # 找最长的重复子串
-    sentences = re.split(r'(?<=[。！？])', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    
-    if len(sentences) >= 3:
-        # 找从哪个句子开始与后面的句子重复
-        for i in range(len(sentences)):
-            chunk_i = ''.join(sentences[i:])
-            chunk_j = ''.join(sentences[:i])
-            # 如果后半段在前半段中出现过（模糊匹配）
-            if i > 0 and len(chunk_i) >= 20 and chunk_i in chunk_j:
-                # 前面是推理+回复，后面是重复的回复
-                reasoning = ''.join(sentences[:i])
-                # 检查推理部分是否包含最终回复（重复）
-                # 取推理部分的最后一段作为回复
-                reply_start = reasoning.rfind(chunk_i[:20]) if len(chunk_i) >= 20 else -1
-                if reply_start >= 0:
-                    extra_thinking = reasoning[:reply_start].strip()
-                    cleaned = reasoning[reply_start:].strip()
-                    return cleaned, extra_thinking
-    
-    # 策略3：直接去掉已知的推理性句子
-    reasoning_keywords = ['当前处于', '系统.*指令', '因此[，,]我', '我需[要会]', '我应该',
-                          '严格遵循', '跳过所有', '无需输出', '不是普通', '属于.*问题']
-    lines = text.split('\n')
-    reply_lines = []
-    reasoning_lines = []
-    
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        is_reasoning = any(re.search(kw, stripped) for kw in reasoning_keywords)
-        if is_reasoning:
-            reasoning_lines.append(stripped)
-        else:
-            reply_lines.append(stripped)
-    
-    if reasoning_lines and reply_lines:
-        return ' '.join(reply_lines), '\n'.join(reasoning_lines)
-    
-    # 策略4：如果 reply 过长（>200字），尝试只取最后200字作为回复
-    if len(text) > 200:
-        # 找最后一个句号之前的内容，如果最后部分和前面部分有重复
-        last_sentence_end = text.rfind('。')
-        if last_sentence_end > 100:
-            tail = text[last_sentence_end+1:].strip()
-            if tail:
-                # 检查 tail 是否在前面出现过
-                preceding = text[:last_sentence_end]
-                if tail in preceding:
-                    # tail 是重复的回复，前面的推理+回复混合体
-                    # 在 preceding 中找到 tail 第一次出现的位置
-                    first_pos = preceding.find(tail)
-                    if first_pos > 0:
-                        extra_thinking = preceding[:first_pos].strip()
-                        return tail, extra_thinking
-    
-    return text, ""
+
+
 
 
 def triage_node(state: LaborLawState) -> LaborLawState:
@@ -511,17 +414,12 @@ def triage_node(state: LaborLawState) -> LaborLawState:
         if json_match:
             try:
                 parsed = json.loads(json_match.group())
-                reply_raw = parsed.get("reply", "")
-                # 清洗 reply：模型经常把推理过程塞进 reply，需要分离
-                cleaned_reply, extra_thinking = _clean_reply(reply_raw)
-                if extra_thinking:
-                    thinking_text = (thinking_text + "\n" + extra_thinking).strip() if thinking_text else extra_thinking
                 triage_result = {
                     "action": parsed.get("action", "chat"),
                     "category": parsed.get("category", "通用咨询"),
-                    "reply": cleaned_reply
+                    "reply": parsed.get("reply", "")
                 }
-                print(f"[TRIAGE] JSON 解析成功: action={triage_result['action']}, category={triage_result['category']}")
+                print(f"[TRIAGE] JSON 解析成功: action={triage_result['action']}")
             except json.JSONDecodeError as e:
                 print(f"[WARNING] JSON 解析失败: {e}, 原文: {json_str[:200]}")
     

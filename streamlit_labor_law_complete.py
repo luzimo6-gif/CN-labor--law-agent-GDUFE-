@@ -559,50 +559,33 @@ if 'context_round_count' not in st.session_state:
 # 3. 辅助函数
 # ==========================================
 def parse_ai_message(text):
-    """防御性极强的流式解析：严格隔离思考与正文，防止内部指令泄露"""
+    """专为流式输出优化的极简解析：稳定提取思考与正文，无过度清洗"""
     thinking = ""
     output = ""
 
     if not text or not text.strip():
         return "", ""
 
-    # ── 第1层：提取 <thinking> 标签内容 ──
+    # 1. 提取 <thinking>
     think_match = re.search(r'<thinking>(.*?)(?:</thinking>|$)', text, re.DOTALL)
     if think_match:
         thinking = think_match.group(1).strip()
 
-    # ── 第2层：提取 <output> 标签内容 ──
+    # 2. 提取 <output>
     out_match = re.search(r'<output>(.*?)(?:</output>|$)', text, re.DOTALL)
 
     if out_match:
         json_str = out_match.group(1).strip()
-
-        # 如果模型没写 <thinking> 标签但直接开始了推理，将其纳入 thinking
-        if not think_match:
-            before_output = text.split('<output>')[0].strip()
-            # 去掉可能的空 <thinking></thinking> 标签
-            before_output = re.sub(r'<thinking>\s*</thinking>', '', before_output).strip()
-            if before_output:
-                thinking = before_output
-
-        # ── 第3层：清理 JSON 外壳 ──
-        # 去掉 markdown 代码块包裹
+        # 清理代码块外壳
         json_str = re.sub(r'^```(?:json)?\s*', '', json_str)
         json_str = re.sub(r'\s*```$', '', json_str)
-        # 去掉开头可能残留的 "json" 字样
-        json_str = re.sub(r'^json\s*', '', json_str, flags=re.IGNORECASE)
 
-        # ── 第4层：尝试 JSON 解析 ──
+        # 3. 尝试 JSON 解析
         try:
             parsed = json.loads(json_str)
             if isinstance(parsed, dict) and "reply" in parsed:
                 output = parsed["reply"]
-                # 如果 reply 字段本身又嵌套了思考内容，二次清洗
-                output, extra_think = _clean_reply_output(output)
-                if extra_think:
-                    thinking = (thinking + "\n" + extra_think).strip() if thinking else extra_think
             else:
-                # JSON 有效但无 reply 字段，取第一个字符串值
                 for v in parsed.values():
                     if isinstance(v, str) and len(v) > 10:
                         output = v
@@ -610,134 +593,38 @@ def parse_ai_message(text):
                 if not output:
                     output = json_str
         except (json.JSONDecodeError, ValueError):
-            # ── 第5层：JSON 解析失败，正则兜底提取 reply ──
+            # 4. JSON 未闭合（流式中常见），正则兜底提取 reply
             reply_match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str)
             if reply_match:
                 output = reply_match.group(1).replace('\\n', '\n')
-                output, extra_think = _clean_reply_output(output)
-                if extra_think:
-                    thinking = (thinking + "\n" + extra_think).strip() if thinking else extra_think
             else:
-                # ── 第6层：完全无法解析，剥掉标签直接返回 ──
+                # 5. 完全无法解析，剥掉标签返回原文
                 output = re.sub(r'</?output>', '', text)
                 output = re.sub(r'</?thinking>.*?(?:</thinking>|$)', '', output, flags=re.DOTALL)
                 output = re.sub(r'^```(?:json)?\s*', '', output)
                 output = re.sub(r'```$', '', output).strip()
     else:
-        # ── 没有 <output> 标签的情况 ──
-        # 去掉 <thinking> 部分后的正文
+        # 没有 <output> 标签
         output = text
         if think_match:
-            # 删除 thinking 块
             output = re.sub(r'<thinking>.*?(?:</thinking>|$)', '', output, flags=re.DOTALL).strip()
 
-        # 清理可能残留的 JSON/markdown 外壳
         output = re.sub(r'^```(?:json)?\s*', '', output)
         output = re.sub(r'```$', '', output).strip()
 
         # 如果正文看起来像 JSON，尝试提取 reply
-        output_stripped = output.strip()
-        if output_stripped.startswith('{'):
+        if output.strip().startswith('{'):
             try:
-                parsed = json.loads(output_stripped)
+                parsed = json.loads(output.strip())
                 if isinstance(parsed, dict) and "reply" in parsed:
                     output = parsed["reply"]
             except (json.JSONDecodeError, ValueError):
                 pass
 
-    # ── 第7层：最终防御 —— 清除泄露的系统指令特征 ──
-    output = _strip_leaked_instructions(output)
+    # 清理残留 XML 标签
+    output = re.sub(r'</?(?:thinking|output|system|instruction)\b[^>]*>', '', output)
 
     return thinking, output
-
-
-def _clean_reply_output(reply_text):
-    """清洗 reply 字段中混入的推理内容（与后端 _clean_reply 逻辑对齐）
-    返回 (cleaned_reply, extra_thinking)
-    """
-    if not reply_text:
-        return "", ""
-
-    text = reply_text.strip()
-
-    # 策略1：按空行分段，检测推理+回复混合
-    paragraphs = re.split(r'\n\s*\n', text)
-    paragraphs = [p.strip() for p in paragraphs if p.strip()]
-
-    if len(paragraphs) >= 2:
-        last_para = paragraphs[-1]
-        reasoning_parts = []
-        for p in paragraphs[:-1]:
-            if len(p) > len(last_para) * 0.8:
-                reasoning_parts.append(p)
-            elif any(kw in p for kw in ['因此', '我需', '我应', '系统', '模式', '指令', '跳过', '遵循', '无需', '当前处于']):
-                reasoning_parts.append(p)
-        if reasoning_parts:
-            return last_para, '\n'.join(reasoning_parts)
-
-    # 策略2：句子级去重检测
-    sentences = re.split(r'(?<=[。！？])', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    if len(sentences) >= 3:
-        for i in range(len(sentences)):
-            chunk_i = ''.join(sentences[i:])
-            chunk_j = ''.join(sentences[:i])
-            if i > 0 and len(chunk_i) >= 20 and chunk_i in chunk_j:
-                reasoning = ''.join(sentences[:i])
-                reply_start = reasoning.rfind(chunk_i[:20]) if len(chunk_i) >= 20 else -1
-                if reply_start >= 0:
-                    return reasoning[reply_start:].strip(), reasoning[:reply_start].strip()
-
-    # 策略3：逐行关键词分类
-    reasoning_keywords = ['当前处于', '系统.*指令', '因此[，,]我', '我需[要会]', '我应该',
-                          '严格遵循', '跳过所有', '无需输出', '不是普通', '属于.*问题']
-    lines = text.split('\n')
-    reply_lines, reasoning_lines = [], []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        is_reasoning = any(re.search(kw, stripped) for kw in reasoning_keywords)
-        (reasoning_lines if is_reasoning else reply_lines).append(stripped)
-
-    if reasoning_lines and reply_lines:
-        return ' '.join(reply_lines), '\n'.join(reasoning_lines)
-
-    # 策略4：长文本尾部重复检测
-    if len(text) > 200:
-        last_dot = text.rfind('。')
-        if last_dot > 100:
-            tail = text[last_dot + 1:].strip()
-            if tail and tail in text[:last_dot]:
-                first_pos = text[:last_dot].find(tail)
-                if first_pos > 0:
-                    return tail, text[:first_pos].strip()
-
-    return text, ""
-
-
-def _strip_leaked_instructions(text):
-    """清除正文中泄露的内部系统指令特征片段"""
-    if not text:
-        return text
-
-    # 去掉残留的 XML 标签
-    text = re.sub(r'</?(?:thinking|output|system|instruction|context)\b[^>]*>', '', text)
-
-    # 去掉类似 "你是一个..." 的角色定义泄露
-    text = re.sub(r'^你是一个[^。？！]*[。？！]\s*', '', text)
-
-    # 去掉 "我是专注..." 的自我介绍泄露（常见于模型混淆了推理和回复）
-    text = re.sub(r'^我是专注[^。？！]*的[^。？！]*[，,][^。？！]*[。？！]\s*', '', text)
-
-    # 去掉 "用户当前处于..." 等状态描述泄露
-    text = re.sub(r'用户当前处于[^。？！]*[。？！]\s*', '', text)
-
-    # 去掉 markdown 代码块残留
-    text = re.sub(r'^```(?:json)?\s*', '', text)
-    text = re.sub(r'```$', '', text)
-
-    return text.strip()
 
 def extract_info_silently(chat_history, current_data):
     """Context 工程：静默提取信息到右侧卷宗，扩大提取范围"""
