@@ -71,6 +71,24 @@ class DashScopeEmbeddings(Embeddings):
 # ==========================================
 print(">>> 正在初始化大模型和知识库...")
 
+# 启动时打印 API 配置（脱敏），便于排查连接问题
+_masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "(KEY太短或为空)"
+print(f">>> API Key: {_masked_key}")
+print(f">>> Base URL: {base_url}")
+
+# 启动时测试 API 连接
+try:
+    import requests as _req
+    _test_resp = _req.get(
+        base_url.replace("/compatible-mode/v1", ""),
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=10,
+        verify=False
+    )
+    print(f">>> API 端点连通性测试: HTTP {_test_resp.status_code}")
+except Exception as _e:
+    print(f">>> ⚠️ API 端点连通性测试失败: {type(_e).__name__}: {_e}")
+
 embeddings = DashScopeEmbeddings(api_key=api_key, model="text-embedding-v2")
 llm = ChatOpenAI(
     model="qwen-plus",
