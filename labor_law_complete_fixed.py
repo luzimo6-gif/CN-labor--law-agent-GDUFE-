@@ -281,6 +281,62 @@ def summarize_conversation_node(state: LaborLawState):
         "messages": delete_messages 
     }
 
+def _clean_reply(reply_text):
+    """清洗 triage reply：分离推理性文字和最终用户可见回复。
+    模型常把推理过程塞进 reply 字段，需要把推理部分移到 thinking，只留最终回复。
+    返回 (cleaned_reply, extra_thinking)
+    """
+    if not reply_text:
+        return "", ""
+    
+    # 常见的推理性关键词模式（模型用来"自言自语"的标记）
+    reasoning_patterns = [
+        r'当前处于.*?模式',
+        r'系统.*?指令[：:]?',
+        r'因此[，,]我应',
+        r'无需输出\s*action',
+        r'这是系统级',
+        r'不是普通咨询',
+        r'我需要',
+        r'我应该',
+        r'我必须',
+        r'用户.*?属于',
+        r'属于.*?类问题',
+        r'需要.*?表明',
+        r'严格遵循',
+        r'跳过所有',
+    ]
+    
+    # 按换行分段，区分推理段落和回复段落
+    lines = reply_text.strip().split('\n')
+    reasoning_lines = []
+    reply_lines = []
+    
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        is_reasoning = False
+        for pattern in reasoning_patterns:
+            if re.search(pattern, line_stripped):
+                is_reasoning = True
+                break
+        if is_reasoning:
+            reasoning_lines.append(line_stripped)
+        else:
+            reply_lines.append(line_stripped)
+    
+    # 如果没有识别出推理内容，但内容明显过长（>200字），尝试取最后一段作为回复
+    cleaned = ' '.join(reply_lines) if reply_lines else reply_text
+    extra_thinking = '\n'.join(reasoning_lines) if reasoning_lines else ""
+    
+    # 如果清理后回复为空但有多行内容，取最后非推理行作为回复
+    if not cleaned.strip() and reasoning_lines:
+        cleaned = "您好，我是劳动法智能助理，请问有什么可以帮您的？"
+    
+    return cleaned.strip(), extra_thinking
+
+
 def triage_node(state: LaborLawState) -> LaborLawState:
     """节点1：前台分诊 + Context 工程信息完善度审视"""
     print("\n[AI] [分诊台 AI] 正在结合右侧卷宗与聊天记录分析意图...")
@@ -423,10 +479,15 @@ def triage_node(state: LaborLawState) -> LaborLawState:
         if json_match:
             try:
                 parsed = json.loads(json_match.group())
+                reply_raw = parsed.get("reply", "")
+                # 清洗 reply：模型经常把推理过程塞进 reply，需要分离
+                cleaned_reply, extra_thinking = _clean_reply(reply_raw)
+                if extra_thinking:
+                    thinking_text = (thinking_text + "\n" + extra_thinking).strip() if thinking_text else extra_thinking
                 triage_result = {
                     "action": parsed.get("action", "chat"),
                     "category": parsed.get("category", "通用咨询"),
-                    "reply": parsed.get("reply", "")
+                    "reply": cleaned_reply
                 }
                 print(f"[TRIAGE] JSON 解析成功: action={triage_result['action']}, category={triage_result['category']}")
             except json.JSONDecodeError as e:
