@@ -36,305 +36,917 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* ========================================================= */
+    /* 藏青 + 金黄 品牌撞色视觉系统 */
+    /* 主色：#0F2C5C (深邃藏青) | 辅色：#E6B800 (高级金黄) */
+    /* ========================================================= */
+    
     /* 隐藏默认元素 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
     
-    /* 1. 极致的中文字体栈与背景微调（已修复 Emoji 小挂件显示问题） */
+    /* 1. 中文字体栈 */
     body, [class*="css"], .stTextInput, .stTextArea, .stMarkdown {
         font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji" !important;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
-    .stApp {
-        background-color: #f8fafc;
+    
+    /* ========================================================= */
+    /* 2. 登录页面背景 */
+    /* ========================================================= */
+    [data-testid="stApp"] > div:first-child {
+        position: relative;
     }
     
-    /* 标题区域 */
-    .chat-title { font-weight: 800; color: #1e293b; margin-bottom: 0rem; font-size: 2.4rem; letter-spacing: -0.03em; }
-    .chat-subtitle { color: #64748b; font-size: 1rem; margin-bottom: 1.5rem; font-weight: 400; }
+    /* 背景图片层 */
+    .login-background {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: 0.12;
+        z-index: 0;
+        pointer-events: none;
+    }
     
-    /* 2. 优雅的入场动画 */
+    /* 登录卡片容器 */
+    .login-card-container {
+        position: relative;
+        z-index: 10;
+        background: linear-gradient(145deg, rgba(255,255,255,0.98) 0%, rgba(250,252,255,0.96) 100%);
+        backdrop-filter: blur(30px);
+        -webkit-backdrop-filter: blur(30px);
+        border-radius: 24px;
+        border: 1px solid rgba(15, 44, 92, 0.1);
+        box-shadow: 
+            0 30px 100px rgba(15, 44, 92, 0.25),
+            0 0 0 1px rgba(230, 184, 0, 0.15),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        padding: 50px 40px;
+        margin: 20px auto;
+        max-width: 480px;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .login-card-container:hover {
+        box-shadow: 
+            0 40px 120px rgba(15, 44, 92, 0.3),
+            0 0 100px rgba(230, 184, 0, 0.15),
+            0 0 0 2px rgba(230, 184, 0, 0.2);
+        transform: translateY(-5px);
+    }
+    
+    /* 登录标题区域 */
+    .login-header {
+        text-align: center;
+        padding: 0 0 30px 0;
+        border-bottom: 2px solid transparent;
+        border-image: linear-gradient(90deg, transparent, #E6B800, #0F2C5C, transparent) 1;
+        margin-bottom: 35px;
+    }
+    
+    .login-icon {
+        font-size: 3.5rem;
+        margin-bottom: 15px;
+        filter: drop-shadow(0 4px 8px rgba(230, 184, 0, 0.3));
+        animation: iconFloat 3s ease-in-out infinite;
+    }
+    
+    @keyframes iconFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+    }
+    
+    .login-title {
+        font-weight: 800;
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 50%, #E6B800 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-size: 2.2rem;
+        letter-spacing: -0.03em;
+        margin: 0 0 10px 0;
+    }
+    
+    .login-subtitle {
+        color: #5a6a7a;
+        font-size: 1rem;
+        margin: 0;
+        font-weight: 400;
+    }
+    
+    /* 登录表单区域 */
+    .login-form {
+        padding: 10px 0;
+    }
+    
+    /* 登录按钮撞色效果 */
+    .login-form button[kind="primary"] {
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        font-size: 1.05rem !important;
+        padding: 14px 24px !important;
+        box-shadow: 
+            0 6px 25px rgba(15, 44, 92, 0.3),
+            0 0 40px rgba(230, 184, 0, 0.15),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        position: relative;
+        overflow: hidden;
+        letter-spacing: 0.1em;
+    }
+    
+    .login-form button[kind="primary"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(230, 184, 0, 0.3), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .login-form button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1a3a6a 0%, #0F2C5C 100%) !important;
+        box-shadow: 
+            0 10px 40px rgba(15, 44, 92, 0.4),
+            0 0 60px rgba(230, 184, 0, 0.25),
+            inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+        transform: translateY(-3px);
+    }
+    
+    .login-form button[kind="primary"]:hover::before {
+        left: 100%;
+    }
+    
+    .login-form button[kind="primary"]:active {
+        transform: translateY(-1px);
+    }
+    
+    /* 登录输入框 */
+    .login-form .stTextInput > div > div > input,
+    .login-form .stTextArea > div > div > textarea {
+        background: linear-gradient(145deg, #ffffff, #f8f9fc);
+        border: 2px solid rgba(15, 44, 92, 0.1);
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .login-form .stTextInput > div > div > input:hover,
+    .login-form .stTextArea > div > div > textarea:hover {
+        border-color: #E6B800;
+        box-shadow: 0 0 0 4px rgba(230, 184, 0, 0.1);
+    }
+    
+    .login-form .stTextInput > div > div > input:focus,
+    .login-form .stTextArea > div > div > textarea:focus {
+        border-color: #0F2C5C;
+        box-shadow: 
+            0 0 0 4px rgba(15, 44, 92, 0.1),
+            0 0 25px rgba(230, 184, 0, 0.1);
+    }
+    
+    /* 标签页样式 */
+    .login-tabs [data-baseweb="tab-list"] {
+        background: rgba(15, 44, 92, 0.03);
+        border-radius: 12px;
+        padding: 4px;
+        gap: 4px;
+    }
+    
+    .login-tabs [data-baseweb="tab"] {
+        border-radius: 10px;
+        font-weight: 500;
+        color: #5a6a7a;
+        transition: all 0.25s ease;
+    }
+    
+    .login-tabs [data-baseweb="tab"]:hover {
+        background: rgba(230, 184, 0, 0.1);
+        color: #0F2C5C;
+    }
+    
+    .login-tabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 15px rgba(15, 44, 92, 0.25);
+    }
+    
+    /* ========================================================= */
+    /* 3. 标题区域 - 藏青金黄撞色 */
+    /* ========================================================= */
+    .chat-title { 
+        font-weight: 700; 
+        color: #0F2C5C; 
+        margin-bottom: 0.3rem; 
+        font-size: 1.6rem; 
+        letter-spacing: -0.01em; 
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .chat-subtitle { 
+        color: #5a6a7a; 
+        font-size: 0.85rem; 
+        margin-bottom: 1rem; 
+        font-weight: 400; 
+        border-left: 3px solid #E6B800;
+        padding-left: 12px;
+    }
+    
+    /* ========================================================= */
+    /* 4. 消息动画特效 */
+    /* ========================================================= */
     @keyframes slideUpFade {
         from { opacity: 0; transform: translateY(15px); }
         to { opacity: 1; transform: translateY(0); }
     }
     
+    @keyframes messageSlideIn {
+        from { opacity: 0; transform: translateX(-10px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    @keyframes avatarPop {
+        0% { transform: scale(0.8); opacity: 0; }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    
     .stChatMessage {
         animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         position: relative;
-        z-index: 2; /* 确保聊天内容在水印之上 */
+        z-index: 2;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        border-radius: 12px;
     }
     
-    /* 右侧面板 - 增加弥散阴影、现代感圆角和入场动画 */
+    .stChatMessage:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(15, 44, 92, 0.12), 
+                    0 0 0 1px rgba(230, 184, 0, 0.1);
+    }
+    
+    .stChatMessage[data-testid="stChatMessage"] > div:first-child {
+        animation: messageSlideIn 0.3s ease-out;
+    }
+    
+    .stChatMessage > div > div:has(img[alt*="assistant"]) {
+        animation: avatarPop 0.4s ease-out;
+    }
+    
+    /* ========================================================= */
+    /* 4. 右侧面板 - 双层撞色呼吸阴影 */
+    /* ========================================================= */
     .panel-container { 
         background-color: #ffffff; 
-        border-radius: 20px; 
-        padding: 28px; 
-        border: 1px solid #f1f5f9; 
-        box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 4px 6px -4px rgba(0, 0, 0, 0.02);
-        height: 80vh; 
+        border-radius: 12px; 
+        padding: 20px; 
+        border: 1px solid rgba(15, 44, 92, 0.08); 
+        height: 85vh; 
         overflow-y: auto; 
-        animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         position: relative;
         z-index: 2;
+        /* 双层阴影 - 藏青+金黄撞色 */
+        box-shadow: 
+            0 4px 20px rgba(15, 44, 92, 0.06),
+            0 0 0 1px rgba(230, 184, 0, 0.05),
+            inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        animation: panelBreathingShadow 5s ease-in-out infinite;
+    }
+    
+    @keyframes panelBreathingShadow {
+        0%, 100% {
+            box-shadow: 
+                0 4px 20px rgba(15, 44, 92, 0.06),
+                0 0 30px rgba(15, 44, 92, 0.03),
+                0 0 0 1px rgba(230, 184, 0, 0.05);
+        }
+        50% {
+            box-shadow: 
+                0 8px 35px rgba(15, 44, 92, 0.1),
+                0 0 50px rgba(230, 184, 0, 0.08),
+                0 0 0 1px rgba(230, 184, 0, 0.1);
+        }
+    }
+    
+    .panel-container:hover {
+        box-shadow: 
+            0 15px 50px rgba(15, 44, 92, 0.15),
+            0 0 60px rgba(230, 184, 0, 0.12),
+            0 0 0 2px rgba(230, 184, 0, 0.15);
+        border-color: rgba(230, 184, 0, 0.2);
+        transform: translateY(-3px);
     }
     
     .panel-header { 
-        color: #0f172a; 
-        font-weight: 700; 
-        font-size: 1.2rem; 
-        margin-bottom: 20px; 
-        border-bottom: 2px solid #f1f5f9; 
-        padding-bottom: 12px;
+        color: #0F2C5C; 
+        font-weight: 600; 
+        font-size: 0.95rem; 
+        margin-bottom: 14px; 
+        border-bottom: 2px solid transparent;
+        border-image: linear-gradient(90deg, #E6B800, #0F2C5C) 1;
+        padding-bottom: 10px;
+        transition: color 0.3s ease;
     }
     
-    /* 激活态的高亮边框 - 改为柔和的蓝色发光 */
     .highlight-border { 
-        border: 1px solid #3b82f6 !important; 
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15) !important; 
+        border: 2px solid #E6B800 !important; 
+        box-shadow: 
+            0 0 0 4px rgba(230, 184, 0, 0.15),
+            0 4px 20px rgba(15, 44, 92, 0.1) !important; 
         transition: all 0.3s ease;
     }
     
-    /* 📄 报告预览 A4 纸质感 */
+    /* ========================================================= */
+    /* 5. 报告预览卡片 - 撞色悬浮质感 */
+    /* ========================================================= */
     .report-preview-box {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        background: linear-gradient(145deg, #ffffff 0%, #fafbfc 100%);
+        border: 1px solid rgba(15, 44, 92, 0.1);
+        border-radius: 12px;
         padding: 40px 30px;
         margin-top: 15px;
         font-size: 0.95rem;
         line-height: 1.8;
-        color: #334155;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        color: #1a2b48;
+        /* 三层撞色阴影 */
+        box-shadow: 
+            0 10px 40px rgba(15, 44, 92, 0.08),
+            0 0 0 1px rgba(230, 184, 0, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        cursor: default;
+        position: relative;
+        overflow: hidden;
     }
-    .report-preview-box h4 { color: #1e3a8a; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; margin-top: 25px; }
+    
+    .report-preview-box::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #0F2C5C, #E6B800, #0F2C5C);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .report-preview-box:hover {
+        transform: translateY(-6px) scale(1.005);
+        box-shadow: 
+            0 20px 60px rgba(15, 44, 92, 0.15),
+            0 0 80px rgba(230, 184, 0, 0.12),
+            0 0 0 2px rgba(230, 184, 0, 0.2);
+        border-color: rgba(230, 184, 0, 0.25);
+    }
+    
+    .report-preview-box:hover::before {
+        opacity: 1;
+    }
+    
+    .report-preview-box h4 { 
+        color: #0F2C5C; 
+        border-bottom: 2px solid #E6B800; 
+        padding-bottom: 10px; 
+        margin-top: 25px;
+        transition: all 0.25s ease;
+        position: relative;
+    }
+    
+    .report-preview-box h4::before {
+        content: '◆';
+        color: #E6B800;
+        margin-right: 8px;
+        font-size: 0.7em;
+    }
+    
+    .report-preview-box:hover h4 {
+        color: #1a3a6a;
+        border-bottom-color: #0F2C5C;
+    }
+    
     .report-preview-box p { margin-bottom: 15px; }
     
-    /* 输入框样式统一 */
+    /* ========================================================= */
+    /* 6. 输入框 - 藏青金黄撞色边框 */
+    /* ========================================================= */
     .stTextInput>div>div>input, .stTextArea>div>div>textarea { 
         border-radius: 10px; 
-        border: 1px solid #e2e8f0; 
-        transition: all 0.2s ease;
+        border: 1px solid rgba(15, 44, 92, 0.15); 
+        background: linear-gradient(145deg, #ffffff, #f8f9fc);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        position: relative;
     }
-    .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
+    
+    .stTextInput>div>div>input::placeholder, 
+    .stTextArea>div>div>textarea::placeholder {
+        color: #8a9aaa;
+        transition: color 0.2s ease;
+    }
+    
+    .stTextInput>div>div>input:hover, 
+    .stTextArea>div>div>textarea:hover {
+        border-color: #E6B800;
+        box-shadow: 
+            0 0 0 3px rgba(230, 184, 0, 0.1),
+            0 4px 15px rgba(15, 44, 92, 0.08);
+    }
+    
+    .stTextInput>div>div>input:focus, 
+    .stTextArea>div>div>textarea:focus {
+        border-color: #0F2C5C;
+        box-shadow: 
+            0 0 0 3px rgba(15, 44, 92, 0.12),
+            0 0 20px rgba(230, 184, 0, 0.1),
+            0 4px 20px rgba(15, 44, 92, 0.1);
+        outline: none;
+    }
+    
+    .stTextInput>div>div>input:focus::placeholder, 
+    .stTextArea>div>div>textarea:focus::placeholder {
+        color: #c0c8d0;
     }
     
     /* ========================================================= */
-    /* 核心优化区：按钮与交互控件 */
+    /* 7. 按钮 - 藏青金黄撞色深化 */
     /* ========================================================= */
     
-    /* 1. 主按钮 (Primary) - 替换默认的刺眼红色为渐变科技蓝 */
+    /* 主按钮 */
     button[kind="primary"] {
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 12px !important;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fc 100%) !important;
+        color: #0F2C5C !important;
+        border: 1px solid rgba(15, 44, 92, 0.2) !important;
+        border-radius: 10px !important;
         font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3) !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        padding: 0.45rem 1.1rem !important;
+        box-shadow: 
+            0 2px 8px rgba(15, 44, 92, 0.08),
+            0 0 0 1px rgba(230, 184, 0, 0.1) !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        position: relative;
+        overflow: hidden;
     }
+    
+    button[kind="primary"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(230, 184, 0, 0.15), transparent);
+        transition: left 0.5s ease;
+    }
+    
     button[kind="primary"]:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4) !important;
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%) !important;
+        color: #ffffff !important;
+        border-color: #0F2C5C !important;
+        box-shadow: 
+            0 6px 25px rgba(15, 44, 92, 0.25),
+            0 0 40px rgba(230, 184, 0, 0.15),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+        transform: translateY(-3px);
+    }
+    
+    button[kind="primary"]:hover::before {
+        left: 100%;
+    }
+    
+    button[kind="primary"]:active {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 10px rgba(15, 44, 92, 0.15) !important;
     }
 
-    /* 2. 次级按钮 (Secondary) - 如清空对话按钮，增加精致感 */
+    /* 次级按钮 */
     button[kind="secondary"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        color: #475569 !important;
-        border-radius: 12px !important;
+        background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%) !important;
+        border: 1px solid rgba(15, 44, 92, 0.15) !important;
+        color: #0F2C5C !important;
+        border-radius: 10px !important;
         font-weight: 500 !important;
-        transition: all 0.2s ease !important;
+        box-shadow: 0 2px 6px rgba(15, 44, 92, 0.05) !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        position: relative;
+        overflow: hidden;
     }
+    
+    button[kind="secondary"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(15, 44, 92, 0.06), transparent);
+        transition: left 0.5s ease;
+    }
+    
     button[kind="secondary"]:hover {
-        border-color: #94a3b8 !important;
-        color: #0f172a !important;
-        background-color: #f8fafc !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
+        background: linear-gradient(135deg, #E6B800 0%, #d4a600 100%) !important;
+        color: #0F2C5C !important;
+        border-color: #E6B800 !important;
+        box-shadow: 
+            0 6px 20px rgba(230, 184, 0, 0.25),
+            0 0 30px rgba(230, 184, 0, 0.15) !important;
+        transform: translateY(-2px);
     }
-
-    /* 3. Popover 悬浮窗按钮 (模式切换/附件) - 改为胶囊样式 */
-    div[data-testid="stPopover"] > button {
-        border: 1px solid #e2e8f0 !important;
-        background-color: #ffffff !important;
-        color: #334155 !important;
-        font-weight: 600 !important;
-        border-radius: 30px !important; /* 胶囊圆角 */
-        padding: 6px 20px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+    
+    button[kind="secondary"]:hover::before {
+        left: 100%;
+    }
+    
+    /* 危险按钮 */
+    button.danger-btn {
+        color: #991b1b !important;
+        border-color: rgba(153, 27, 27, 0.3) !important;
         transition: all 0.2s ease !important;
     }
-    div[data-testid="stPopover"] > button:hover {
-        border-color: #cbd5e1 !important;
-        background-color: #f8fafc !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-        transform: translateY(-1px) !important;
+    button.danger-btn:hover {
+        background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
+        border-color: #dc2626 !important;
+        color: #7f1d1d !important;
+        box-shadow: 0 4px 15px rgba(153, 27, 27, 0.15) !important;
     }
 
-    /* 4. 底部聊天输入框优化 */
+    /* Popover胶囊按钮 */
+    div[data-testid="stPopover"] > button {
+        border: 2px solid rgba(15, 44, 92, 0.15) !important;
+        background: linear-gradient(135deg, #ffffff, #f8f9fc) !important;
+        color: #0F2C5C !important;
+        font-weight: 600 !important;
+        border-radius: 30px !important;
+        padding: 8px 24px !important;
+        box-shadow: 
+            0 2px 8px rgba(15, 44, 92, 0.06),
+            0 0 0 1px rgba(230, 184, 0, 0.08) !important;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    div[data-testid="stPopover"] > button::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #0F2C5C, #E6B800);
+        border-radius: 3px 3px 0 0;
+        transition: width 0.35s ease;
+    }
+    
+    div[data-testid="stPopover"] > button:hover {
+        border-color: #E6B800 !important;
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 
+            0 6px 25px rgba(15, 44, 92, 0.2),
+            0 0 40px rgba(230, 184, 0, 0.15) !important;
+        transform: translateY(-3px) !important;
+    }
+    
+    div[data-testid="stPopover"] > button:hover::after {
+        width: 70%;
+        background: linear-gradient(90deg, #E6B800, #ffffff);
+    }
+
+    /* 聊天输入框 */
     .stChatInputContainer {
-        border-radius: 24px !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.04) !important;
-        background-color: white !important;
-        padding-left: 10px;
+        border-radius: 28px !important;
+        border: 2px solid rgba(15, 44, 92, 0.12) !important;
+        box-shadow: 
+            0 4px 20px rgba(15, 44, 92, 0.06),
+            0 0 0 1px rgba(230, 184, 0, 0.08) !important;
+        background: linear-gradient(145deg, #ffffff, #fafbfc) !important;
+        padding-left: 12px;
         z-index: 3 !important;
+        transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
     .stChatInputContainer:focus-within {
-        border: 1px solid #3b82f6 !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+        border-color: #E6B800 !important;
+        box-shadow: 
+            0 0 0 4px rgba(230, 184, 0, 0.12),
+            0 8px 30px rgba(15, 44, 92, 0.12),
+            0 0 50px rgba(230, 184, 0, 0.08) !important;
     }
 
     /* ========================================================= */
-    /* 品牌记忆点：动态水印与色彩注入 */
+    /* 8. 品牌记忆系统 - 藏青金黄贯穿 */
     /* ========================================================= */
     
-    /* 1. 顶部品牌呼吸线：打破死板的极细渐变线 */
+    /* 顶部撞色呼吸渐变线 */
     .stApp::before {
         content: "";
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
-        height: 3px;
-        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 60%, #f59e0b 100%);
+        height: 4px;
+        background: linear-gradient(90deg, #0F2C5C 0%, #1a3a6a 25%, #E6B800 50%, #1a3a6a 75%, #0F2C5C 100%);
+        background-size: 200% 100%;
         z-index: 99999;
-    }
-
-    /* 2. 专属文本选中色：带有温度的琥珀金 */
-    ::selection {
-        background-color: rgba(245, 158, 11, 0.2) !important; 
-        color: #1e3a8a !important; 
-    }
-
-    /* 3. 滚动条隐秘美化：唤醒品牌蓝 */
-    ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-        transition: all 0.3s ease;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #3b82f6 0%, #1e3a8a 100%);
-    }
-
-    /* 4. 左侧边栏底色微调：拉开主次空间感 */
-    [data-testid="stSidebar"] {
-        background-color: #f8fafc !important;
-        border-right: 1px solid #f1f5f9;
-        z-index: 3;
-    }
-
-    /* 5. 律政专属动态背景：沉浸式微动天平水印 */
-    .legal-watermark {
-        position: fixed;
-        top: 45%;
-        left: 25%;
-        transform: translate(-50%, -50%);
-        width: 45vw;
-        max-width: 550px;
-        z-index: 0;
-        pointer-events: none; /* 绝对不能影响用户点击 */
-        color: #cbd5e1; /* 极浅的蓝灰色 */
-        opacity: 0.1; /* 隐约可见的透明度，不影响观感 */
-        animation: floatBalance 12s ease-in-out infinite; /* 12秒缓慢呼吸动画 */
+        animation: brandGradientFlow 8s ease-in-out infinite, topBarPulse 3s ease-in-out infinite alternate;
     }
     
-    @keyframes floatBalance {
-        0% { transform: translate(-50%, -50%) rotate(-1deg) scale(1); opacity: 0.06; }
-        50% { transform: translate(-50%, -50%) rotate(1deg) scale(1.03); opacity: 0.12; }
-        100% { transform: translate(-50%, -50%) rotate(-1deg) scale(1); opacity: 0.06; }
+    @keyframes brandGradientFlow {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+    }
+    
+    @keyframes topBarPulse {
+        0% { opacity: 0.9; box-shadow: 0 0 10px rgba(230, 184, 0, 0.3); }
+        100% { opacity: 1; box-shadow: 0 0 25px rgba(230, 184, 0, 0.5), 0 0 50px rgba(15, 44, 92, 0.2); }
     }
 
-    /* 6. 升级版毛玻璃开发者标签 */
+    /* 文本选中 - 金黄藏青 */
+    ::selection {
+        background-color: rgba(230, 184, 0, 0.25) !important; 
+        color: #0F2C5C !important; 
+    }
+
+    /* 滚动条 - 撞色渐变 */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: linear-gradient(180deg, rgba(15, 44, 92, 0.03), rgba(230, 184, 0, 0.03));
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #0F2C5C 0%, #E6B800 100%);
+        border-radius: 10px;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 8px rgba(230, 184, 0, 0.3);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #E6B800 0%, #0F2C5C 100%);
+        box-shadow: 0 0 15px rgba(230, 184, 0, 0.5);
+    }
+
+    /* 左侧边栏 */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f7f9fc 0%, #f0f2f5 100%) !important;
+        border-right: 2px solid transparent;
+        border-image: linear-gradient(180deg, #0F2C5C, #E6B800) 1;
+        z-index: 3;
+        transition: all 0.3s ease;
+    }
+    
+    [data-testid="stSidebar"]:hover {
+        background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%) !important;
+    }
+
+    /* 律政水印 - 撞色脉冲 */
+    .legal-watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 30vw;
+        max-width: 380px;
+        z-index: 0;
+        pointer-events: none;
+        color: #c5cdd8;
+        opacity: 0.4;
+        animation: watermarkPulse 12s ease-in-out infinite;
+        filter: drop-shadow(0 0 20px rgba(230, 184, 0, 0.1));
+    }
+    
+    @keyframes watermarkPulse {
+        0%, 100% { 
+            opacity: 0.3; 
+            transform: translate(-50%, -50%) scale(1);
+            filter: drop-shadow(0 0 15px rgba(15, 44, 92, 0.1));
+        }
+        50% { 
+            opacity: 0.5; 
+            transform: translate(-50%, -50%) scale(1.03);
+            filter: drop-shadow(0 0 30px rgba(230, 184, 0, 0.15));
+        }
+    }
+
+    /* 开发者标签 */
     .developer-info {
         position: fixed;
-        top: 15px;
-        right: 25px;
-        font-size: 0.8rem;
-        color: #94a3b8;
-        z-index: 999;
+        bottom: 15px;
+        right: 20px;
+        font-size: 0.7rem;
+        color: #5a6a7a;
+        z-index: 998;
         text-align: right;
         line-height: 1.6;
-        background: rgba(255, 255, 255, 0.65) !important;
-        backdrop-filter: blur(10px) saturate(150%);
-        -webkit-backdrop-filter: blur(10px) saturate(150%);
-        padding: 5px 15px;
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.4) !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(247,249,252,0.98)) !important;
+        backdrop-filter: blur(10px);
+        padding: 10px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(15, 44, 92, 0.08) !important;
+        box-shadow: 
+            0 4px 20px rgba(15, 44, 92, 0.08),
+            0 0 0 1px rgba(230, 184, 0, 0.1);
         transition: all 0.3s ease;
     }
     .developer-info:hover {
-        background: rgba(255, 255, 255, 0.9) !important;
-        transform: translateY(-2px);
+        background: linear-gradient(145deg, #ffffff, #f8f9fc) !important;
+        box-shadow: 
+            0 8px 30px rgba(15, 44, 92, 0.12),
+            0 0 30px rgba(230, 184, 0, 0.1),
+            0 0 0 1px rgba(230, 184, 0, 0.2) !important;
+        border-color: rgba(230, 184, 0, 0.3) !important;
     }
-    .developer-info a { color: #64748b; text-decoration: none; font-weight: 500; }
-    .developer-info a:hover { color: #3b82f6; }
+    .developer-info a { 
+        color: #0F2C5C; 
+        text-decoration: none; 
+        transition: color 0.2s ease;
+        font-weight: 500;
+    }
+    .developer-info a:hover { 
+        color: #E6B800; 
+    }
 
     /* ========================================================= */
-    /* 移动端适配 (响应式) */
+    /* 9. 额外特效 */
+    /* ========================================================= */
+    
+    /* 加载动画 */
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    
+    .loading-shimmer {
+        background: linear-gradient(90deg, #f0f2f5 25%, rgba(230, 184, 0, 0.1) 50%, #f0f2f5 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+    }
+    
+    /* 下拉选择器 */
+    .stSelectbox > div > div {
+        border: 1px solid rgba(15, 44, 92, 0.12) !important;
+        border-radius: 10px;
+        transition: all 0.25s ease;
+        background: linear-gradient(145deg, #ffffff, #f8f9fc);
+    }
+    
+    .stSelectbox > div > div:hover {
+        border-color: #E6B800 !important;
+        box-shadow: 0 0 0 3px rgba(230, 184, 0, 0.1);
+    }
+    
+    /* 标签页 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        background: linear-gradient(145deg, #ffffff, #f8f9fc);
+        border: 1px solid rgba(15, 44, 92, 0.08);
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background: linear-gradient(145deg, #f8f9fc, #f0f2f5);
+        border-color: rgba(230, 184, 0, 0.3);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%) !important;
+        color: #ffffff !important;
+        border-color: #0F2C5C !important;
+        box-shadow: 0 4px 15px rgba(15, 44, 92, 0.2);
+    }
+    
+    .stTabs [aria-selected="true"]:hover {
+        background: linear-gradient(135deg, #1a3a6a 0%, #0F2C5C 100%) !important;
+    }
+
+    /* 分隔线撞色 */
+    hr {
+        border: none;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(15, 44, 92, 0.1), rgba(230, 184, 0, 0.3), rgba(15, 44, 92, 0.1), transparent);
+        transition: all 0.3s ease;
+    }
+
+    /* ========================================================= */
+    /* 10. 移动端适配 - 弱化动画保留撞色 */
     /* ========================================================= */
     @media (max-width: 768px) {
-        .chat-title { font-size: 1.8rem; }
+        .chat-title { 
+            font-size: 1.3rem; 
+            background: linear-gradient(135deg, #0F2C5C 0%, #1a3a6a 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
         
         .panel-container { 
             height: auto !important; 
-            max-height: none !important;
-            min-height: 50vh;
-            margin-top: 20px;
+            max-height: 45vh !important;
+            border-radius: 12px !important;
+            animation: panelBreathingShadowMobile 6s ease-in-out infinite;
+        }
+        
+        @keyframes panelBreathingShadowMobile {
+            0%, 100% { 
+                box-shadow: 
+                    0 4px 15px rgba(15, 44, 92, 0.08),
+                    0 0 0 1px rgba(230, 184, 0, 0.08);
+            }
+            50% { 
+                box-shadow: 
+                    0 6px 25px rgba(15, 44, 92, 0.1),
+                    0 0 30px rgba(230, 184, 0, 0.06);
+            }
+        }
+        
+        .panel-container:hover {
+            transform: none;
+        }
+        
+        .report-preview-box:hover {
+            transform: translateY(-3px);
         }
         
         div[data-testid="stPopover"] > button {
-            padding: 4px 12px !important; 
-            font-size: 0.9rem !important;
+            padding: 6px 14px !important; 
+            font-size: 0.85rem !important;
         }
         
-        .legal-watermark { left: 50%; width: 80vw; }
+        div[data-testid="stPopover"] > button:hover {
+            transform: translateY(-1px) !important;
+        }
         
-        /* 核心：强制 st.columns 在移动端纵向堆叠 */
+        .legal-watermark { display: none !important; }
+        
+        /* 强制移动端纵向堆叠 */
         div[data-testid="stColumn"] {
             width: 100% !important;
             flex: 0 0 100% !important;
-            max-width: 100% !important;
         }
         div[data-testid="stHorizontalBlock"] {
             flex-direction: column !important;
-            gap: 1rem !important;
         }
         
-        /* 手机端隐藏开发者信息 */
         .developer-info { display: none !important; }
         
-        /* 手机端隐藏天平水印 */
-        .legal-watermark { display: none !important; }
-        
-        .report-preview-box { padding: 20px 15px; }
+        .report-preview-box { padding: 20px 16px; }
         
         button[kind="primary"], button[kind="secondary"] {
-            min-height: 44px !important;
-            font-size: 1rem !important;
+            min-height: 42px !important;
         }
-    }
-    
-    @media (max-width: 480px) {
-        .chat-title { font-size: 1.4rem; }
-        .chat-subtitle { font-size: 0.85rem; }
-        h1 { font-size: 1.5rem !important; }
-        .panel-container { padding: 16px; border-radius: 14px; }
-        .stChatInputContainer { border-radius: 18px !important; }
+        
+        button[kind="primary"]:hover,
+        button[kind="secondary"]:hover {
+            transform: translateY(-1px);
+        }
+        
+        /* 移动端顶部渐变线简化 */
+        .stApp::before {
+            animation: topBarPulseMobile 4s ease-in-out infinite alternate;
+            height: 3px;
+        }
+        
+        @keyframes topBarPulseMobile {
+            0% { opacity: 0.85; box-shadow: 0 0 8px rgba(230, 184, 0, 0.2); }
+            100% { opacity: 1; box-shadow: 0 0 15px rgba(230, 184, 0, 0.35); }
+        }
+        
+        /* 移动端登录页面优化 */
+        .login-card-container {
+            padding: 30px 20px !important;
+            margin: 15px 10px !important;
+            border-radius: 16px !important;
+            background: rgba(255, 255, 255, 0.99) !important;
+        }
+        
+        .login-title {
+            font-size: 1.6rem !important;
+        }
+        
+        .login-icon {
+            font-size: 2.5rem !important;
+        }
     }
 </style>
 
@@ -355,6 +967,26 @@ st.markdown("""
     <a href="mailto:1452723426@qq.com">1452723426@qq.com</a>
 </div>
 """, unsafe_allow_html=True)
+
+# ==========================================
+# 0.4 背景图片 - Base64编码
+# ==========================================
+import base64
+LOGIN_BG_IMAGE = ""
+MAIN_BG_IMAGE = ""
+
+# 登录背景图
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGIN_BG_PATH = os.path.join(_SCRIPT_DIR, "UI 图片", "UI桌面设计.png")
+if os.path.exists(LOGIN_BG_PATH):
+    with open(LOGIN_BG_PATH, "rb") as img_file:
+        LOGIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
+
+# 主页背景图
+MAIN_BG_PATH = os.path.join(_SCRIPT_DIR, "UI 图片", "UI主页背景.png")
+if os.path.exists(MAIN_BG_PATH):
+    with open(MAIN_BG_PATH, "rb") as img_file:
+        MAIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
 
 # ==========================================
 # 0.5 登录系统
@@ -416,24 +1048,192 @@ if 'current_user' not in st.session_state:
     st.session_state.current_user = None
 if 'login_tab' not in st.session_state:
     st.session_state.login_tab = "login"
+# HTML表单值存储
+if 'html_username' not in st.session_state:
+    st.session_state.html_username = ""
+if 'html_password' not in st.session_state:
+    st.session_state.html_password = ""
+if 'show_register' not in st.session_state:
+    st.session_state.show_register = False
 
 if not st.session_state.authenticated:
     # 登录页居中布局
-    _, login_col, _ = st.columns([3, 4, 3])
+    col_left, col_center, col_right = st.columns([1, 3, 1])
     
-    with login_col:
-        st.markdown("""
-        <div style="text-align: center; padding: 40px 0 20px 0;">
-            <div style="font-size: 3rem; margin-bottom: 10px;">⚖️</div>
-            <h1 style="font-weight: 800; color: #1e293b; font-size: 2rem; letter-spacing: -0.03em; margin: 0;">AI 劳动法</h1>
-            <p style="color: #64748b; font-size: 0.95rem; margin-top: 8px;">请登录以使用系统</p>
-        </div>
+    with col_center:
+        # 登录卡片 - 简洁风格
+        st.markdown(f"""
+        <style>
+            /* 登录页面背景 */
+            .stApp {{
+                background-image: url("{LOGIN_BG_IMAGE}") !important;
+                background-size: cover !important;
+                background-position: center !important;
+                background-repeat: no-repeat !important;
+            }}
+            
+            /* 登录卡片 - 无背景透明 */
+            .login-card {{
+                background: transparent !important;
+                border-radius: 0;
+                padding: 0;
+                box-shadow: none;
+            }}
+            
+            /* Logo */
+            .login-logo {{
+                font-size: 4rem;
+                text-align: center;
+                margin-bottom: 10px;
+                filter: drop-shadow(0 4px 8px rgba(230, 184, 0, 0.5));
+            }}
+            
+            /* 标题 */
+            .login-title {{
+                text-align: center;
+                font-size: 2.2rem;
+                font-weight: 800;
+                color: #0F2C5C;
+                margin-bottom: 8px;
+                text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+            }}
+            
+            /* 副标题 */
+            .login-subtitle {{
+                text-align: center;
+                color: #0F2C5C;
+                font-size: 1rem;
+                margin-bottom: 35px;
+                letter-spacing: 0.15em;
+                opacity: 0.8;
+            }}
+            
+            /* 表单 */
+            [data-testid="stForm"] {{
+                background: transparent !important;
+            }}
+            
+            /* 输入框 */
+            .stTextInput > div {{
+                background: rgba(255, 255, 255, 0.95) !important;
+                border-radius: 10px !important;
+                border: 2px solid rgba(255, 255, 255, 0.3) !important;
+            }}
+            
+            .stTextInput > div:focus-within {{
+                border-color: #E6B800 !important;
+            }}
+            
+            /* 切换按钮样式 - 默认透明，黑色边框和文字 */
+            [data-testid="stHorizontalBlock"] button {{
+                width: 100% !important;
+                background: rgba(255, 255, 255, 0.15) !important;
+                color: #0F2C5C !important;
+                border: 2px solid #0F2C5C !important;
+                border-radius: 10px !important;
+                padding: 12px 20px !important;
+                font-size: 1rem !important;
+                font-weight: 600 !important;
+                margin: 0 5px !important;
+                transition: all 0.3s ease !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+            }}
+            
+            [data-testid="stHorizontalBlock"] button:hover {{
+                background: #E6B800 !important;
+                border-color: #E6B800 !important;
+                color: #0F2C5C !important;
+                transform: translateY(-2px) !important;
+                box-shadow: 0 6px 20px rgba(230, 184, 0, 0.4) !important;
+            }}
+            
+            /* 表单内按钮样式 - 默认透明，黑色边框和文字 */
+            [data-testid="stForm"] button[kind="primary"], [data-testid="stForm"] button[kind="secondary"] {{
+                width: 100% !important;
+                background: rgba(255, 255, 255, 0.15) !important;
+                color: #0F2C5C !important;
+                border: 2px solid #0F2C5C !important;
+                border-radius: 10px !important;
+                padding: 14px 24px !important;
+                font-size: 1rem !important;
+                font-weight: 600 !important;
+                margin-top: 15px !important;
+                transition: all 0.3s ease !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+            }}
+            
+            [data-testid="stForm"] button[kind="primary"]:hover, [data-testid="stForm"] button[kind="secondary"]:hover {{
+                background: #E6B800 !important;
+                border-color: #E6B800 !important;
+                color: #0F2C5C !important;
+                transform: translateY(-2px) !important;
+                box-shadow: 0 8px 25px rgba(230, 184, 0, 0.4) !important;
+            }}
+            
+            /* 密码显示按钮 */
+            [data-testid="stTextInput"] button {{
+                border: 1px solid rgba(15, 44, 92, 0.3) !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                border-radius: 6px !important;
+                padding: 4px 8px !important;
+                min-width: 32px !important;
+                width: 32px !important;
+                height: 32px !important;
+            }}
+            
+            [data-testid="stTextInput"] button:hover {{
+                border-color: #E6B800 !important;
+                background: rgba(230, 184, 0, 0.1) !important;
+            }}
+        </style>
+        
+        <div class="login-card">
+            <div class="login-logo">⚖️</div>
+            <h1 class="login-title">AI 劳动法</h1>
+            <p class="login-subtitle">智能法律咨询系统</p>
         """, unsafe_allow_html=True)
         
-        tab_login, tab_register = st.tabs(["🔑 登录", "📝 注册"])
+        # 登录表单
+        # 切换按钮
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔐 登录", use_container_width=True, type="primary"):
+                st.session_state.show_register = False
+                st.rerun()
+        with col2:
+            if st.button("📝 注册", use_container_width=True):
+                st.session_state.show_register = True
+                st.rerun()
         
-        with tab_login:
-            with st.form("login_form"):
+        st.markdown("<hr style='margin: 20px 0; border-color: rgba(255,255,255,0.2);'>", unsafe_allow_html=True)
+        
+        # 根据状态显示对应表单
+        if st.session_state.show_register:
+            # 注册表单
+            with st.form("register_form", clear_on_submit=True):
+                new_user = st.text_input("用户名", placeholder="请设置用户名")
+                new_name = st.text_input("姓名", placeholder="请输入真实姓名")
+                new_pwd = st.text_input("密码", type="password", placeholder="请设置密码（至少6位）")
+                new_pwd2 = st.text_input("确认密码", type="password", placeholder="请再次输入密码")
+                reg_submitted = st.form_submit_button("完成注册", type="primary", use_container_width=True)
+                
+                if reg_submitted:
+                    if not new_user or not new_pwd or not new_name:
+                        st.warning("请填写所有字段")
+                    elif len(new_pwd) < 6:
+                        st.warning("密码至少6位")
+                    elif new_pwd != new_pwd2:
+                        st.warning("两次密码不一致")
+                    elif create_user(new_user, new_pwd, new_name):
+                        st.success("注册成功！请登录")
+                        st.session_state.show_register = False
+                        st.rerun()
+                    else:
+                        st.warning("该用户名已存在")
+        else:
+            # 登录表单
+            with st.form("login_form", clear_on_submit=True):
                 username = st.text_input("用户名", placeholder="请输入用户名")
                 password = st.text_input("密码", type="password", placeholder="请输入密码")
                 submitted = st.form_submit_button("登 录", type="primary", use_container_width=True)
@@ -448,27 +1248,11 @@ if not st.session_state.authenticated:
                     else:
                         st.error("用户名或密码错误")
         
-        with tab_register:
-            with st.form("register_form"):
-                new_user = st.text_input("设置用户名", placeholder="英文或数字")
-                new_name = st.text_input("您的姓名", placeholder="真实姓名")
-                new_pwd = st.text_input("设置密码", type="password", placeholder="至少6位")
-                new_pwd2 = st.text_input("确认密码", type="password", placeholder="再次输入密码")
-                reg_submitted = st.form_submit_button("注 册", type="primary", use_container_width=True)
-                
-                if reg_submitted:
-                    if not new_user or not new_pwd or not new_name:
-                        st.warning("请填写所有字段")
-                    elif len(new_pwd) < 6:
-                        st.warning("密码至少6位")
-                    elif new_pwd != new_pwd2:
-                        st.warning("两次密码不一致")
-                    elif create_user(new_user, new_pwd, new_name):
-                        st.success("注册成功！请切换到登录页登录")
-                    else:
-                        st.warning("该用户名已存在")
-        
-
+        # 关闭卡片
+        st.markdown("""
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.stop()
 
 # --- 顶部用户信息栏 ---
@@ -918,6 +1702,25 @@ with st.sidebar:
 # ==========================================
 # 5. 主页面布局：根据模式动态切换右侧栏显示
 # ==========================================
+
+# 主页背景图
+if MAIN_BG_IMAGE:
+    st.markdown(f"""
+    <style>
+        .stApp {{
+            background-image: url("{MAIN_BG_IMAGE}") !important;
+            background-size: cover !important;
+            background-position: center !important;
+            background-repeat: no-repeat !important;
+        }}
+        /* 左边收缩边框透明，显示背景图 */
+        [data-testid="stSidebar"] {{
+            background: transparent !important;
+            border: none !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
 st.markdown('<h1 class="chat-title">AI 劳动法</h1>', unsafe_allow_html=True)
 st.markdown('<p class="chat-subtitle">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</p>', unsafe_allow_html=True)
 
@@ -1090,89 +1893,54 @@ with col_chat:
             st.rerun()
 
 # ------------------------------------------
-# 右侧：卷宗面板 & 沉浸式报告预览
+# 右侧：卷宗收集区(上) + 报告预览区(下)
 # ------------------------------------------
 if col_panel is not None:
     with col_panel:
-        panel_class = "panel-container highlight-border" if st.session_state.ready_for_analysis else "panel-container"
-        st.markdown(f'<div class="{panel_class}">', unsafe_allow_html=True)
+        # 上部：卷宗收集区
+        st.markdown('<div class="panel-header">📑 智能案件卷宗</div>', unsafe_allow_html=True)
         
-        if st.session_state.report_generated and st.session_state.analysis_result:
-            # --- 纸质感报告预览区 --- 
-            st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
+        if st.session_state.ai_mode == "QUICK":
+            st.info("⚡ 当前为**普法模式**，AI 只负责快速解答法律疑问，不收集案件卷宗。如需出具正式案件报告，请在聊天框上方切换至「案件模式」。")
             
-            # PDF 生成（@st.cache_data 自动缓存，传 JSON 字符串保证可哈希）
-            form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
-            result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
-            pdf_bytes = create_pdf_report_v3(form_json, result_json)
+        elif st.session_state.ai_mode == "PRO":
+            is_empty = all(v == "" for v in st.session_state.form_data.values())
+            completeness_pct, missing_fields, suggestion = evaluate_form_completeness(st.session_state.form_data)
             
-            st.download_button(
-                label="📥 下载 PDF 格式正式报告",
-                data=pdf_bytes,
-                file_name=f"劳动法分析报告_{datetime.now().strftime('%Y%m%d%H%M')}.pdf",
-                mime="application/pdf",
-                type="primary",
-                use_container_width=True
-            )
+            if st.session_state.ready_for_analysis:
+                st.success("✅ AI 认为信息已充足，请核对下方数据并生成报告。")
+            elif is_empty:
+                st.info("👋 **卷宗目前为空。**\n\n请在左侧向我描述您的案情，我会自动为您提取并填写此处的关键信息。")
+            else:
+                st.markdown(f"""
+                <div style="margin-bottom: 8px;">
+                    <span style="font-size: 0.85rem; color: #475569;">信息完善度</span>
+                    <span style="float: right; font-size: 0.85rem; font-weight: 600; color: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'};">{completeness_pct}%</span>
+                </div>
+                <div style="background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden;">
+                    <div style="background: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'}; height: 100%; width: {completeness_pct}%; transition: width 0.3s;"></div>
+                </div>
+                <div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">💡 {suggestion}</div>
+                """, unsafe_allow_html=True)
+                st.caption("左侧沟通时，AI 会自动为您更新下方信息。")
             
-            advice = strip_markdown(st.session_state.analysis_result.get('final_review', '无数据'))
+        with st.form("case_confirmation_form", border=False):
+            disabled_status = st.session_state.ai_mode == "QUICK"
             
-            preview_html = f"""
-            <div class="report-preview-box">
-                <h3 style="text-align:center; color:#1e3a8a; margin-bottom: 20px;">劳动法律合规建议报告</h3>
-                <p>{advice.replace(chr(10), '<br>')}</p>
-            </div>
-            """
-            st.markdown(preview_html, unsafe_allow_html=True)
+            f_region = st.text_input("案件发生地", value=st.session_state.form_data.get("案件发生地", ""), disabled=disabled_status)
+            f_company = st.text_input("涉事单位名称", value=st.session_state.form_data.get("单位名称", ""), disabled=disabled_status)
+            f_salary = st.text_input("平均月薪", value=st.session_state.form_data.get("平均月薪", ""), disabled=disabled_status)
+            f_date = st.text_input("时间节点", value=st.session_state.form_data.get("时间节点", ""), disabled=disabled_status)
+            f_demand = st.text_input("核心诉求", value=st.session_state.form_data.get("核心诉求", ""), disabled=disabled_status)
+            f_details = st.text_area("详细经过与证据", value=st.session_state.form_data.get("详细经过", ""), height=120, disabled=disabled_status)
             
-        else:
-            # --- 卷宗收集区 ---
-            st.markdown('<div class="panel-header">📑 智能案件卷宗</div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             
-            if st.session_state.ai_mode == "QUICK":
-                st.info("⚡ 当前为**普法模式**，AI 只负责快速解答法律疑问，不收集案件卷宗。如需出具正式案件报告，请在聊天框上方切换至「案件模式」。")
+            if st.session_state.ai_mode == "PRO":
+                btn_type = "primary" if st.session_state.ready_for_analysis else "secondary"
+                btn_text = "✅ 生成法律分析报告" if st.session_state.ready_for_analysis else "强制生成报告"
                 
-            elif st.session_state.ai_mode == "PRO":
-                # Context 工程：显示信息完善度指标
-                is_empty = all(v == "" for v in st.session_state.form_data.values())
-                completeness_pct, missing_fields, suggestion = evaluate_form_completeness(st.session_state.form_data)
-                
-                if st.session_state.ready_for_analysis:
-                    st.success("✅ AI 认为信息已充足，请核对下方数据并生成报告。")
-                elif is_empty:
-                    st.info("👋 **卷宗目前为空。**\n\n请在左侧向我描述您的案情，我会自动为您提取并填写此处的关键信息。")
-                else:
-                    # 显示完善度进度条
-                    st.markdown(f"""
-                    <div style="margin-bottom: 8px;">
-                        <span style="font-size: 0.85rem; color: #475569;">信息完善度</span>
-                        <span style="float: right; font-size: 0.85rem; font-weight: 600; color: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'};">{completeness_pct}%</span>
-                    </div>
-                    <div style="background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden;">
-                        <div style="background: {'#16a34a' if completeness_pct >= 60 else '#ea580c' if completeness_pct >= 30 else '#dc2626'}; height: 100%; width: {completeness_pct}%; transition: width 0.3s;"></div>
-                    </div>
-                    <div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">💡 {suggestion}</div>
-                    """, unsafe_allow_html=True)
-                    st.caption("左侧沟通时，AI 会自动为您更新下方信息。您也可随时手动修正。")
-                
-            with st.form("case_confirmation_form", border=False):
-                # 快速模式下锁定所有输入框
-                disabled_status = st.session_state.ai_mode == "QUICK"
-                
-                f_region = st.text_input("案件发生地", value=st.session_state.form_data.get("案件发生地", ""), disabled=disabled_status)
-                f_company = st.text_input("涉事单位名称", value=st.session_state.form_data.get("单位名称", ""), disabled=disabled_status)
-                f_salary = st.text_input("平均月薪", value=st.session_state.form_data.get("平均月薪", ""), disabled=disabled_status)
-                f_date = st.text_input("时间节点", value=st.session_state.form_data.get("时间节点", ""), disabled=disabled_status)
-                f_demand = st.text_input("核心诉求", value=st.session_state.form_data.get("核心诉求", ""), disabled=disabled_status)
-                f_details = st.text_area("详细经过与证据", value=st.session_state.form_data.get("详细经过", ""), height=150, disabled=disabled_status)
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                if st.session_state.ai_mode == "PRO":
-                    btn_type = "primary" if st.session_state.ready_for_analysis else "secondary"
-                    btn_text = "✅ 卷宗确认无误，生成法律分析报告" if st.session_state.ready_for_analysis else "强制跳过收集，直接生成报告"
-                    
-                    if st.form_submit_button(btn_text, type=btn_type, use_container_width=True):
+                if st.form_submit_button(btn_text, type=btn_type, use_container_width=True):
                         final_form = {
                             "案件发生地": f_region, "单位名称": f_company, "平均月薪": f_salary, 
                             "时间节点": f_date, "核心诉求": f_demand, "详细经过": f_details
@@ -1252,3 +2020,30 @@ if col_panel is not None:
                         st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        # 下部：报告预览区
+        if st.session_state.report_generated and st.session_state.analysis_result:
+            st.markdown('<div class="panel-header">📄 分析报告预览</div>', unsafe_allow_html=True)
+            
+            form_json = json.dumps(st.session_state.form_data, ensure_ascii=False, sort_keys=True)
+            result_json = json.dumps(st.session_state.analysis_result, ensure_ascii=False, sort_keys=True)
+            pdf_bytes = create_pdf_report_v3(form_json, result_json)
+            
+            st.download_button(
+                label="📥 下载 PDF 格式正式报告",
+                data=pdf_bytes,
+                file_name=f"劳动法分析报告_{datetime.now().strftime('%Y%m%d%H%M')}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+            
+            advice = strip_markdown(st.session_state.analysis_result.get('final_review', '无数据'))
+            
+            preview_html = f"""
+            <div class="report-preview-box">
+                <h3 style="text-align:center; color:#1e40af; margin-bottom: 15px;">劳动法律合规建议报告</h3>
+                <p>{advice.replace(chr(10), '<br>')}</p>
+            </div>
+            """
+            st.markdown(preview_html, unsafe_allow_html=True)
