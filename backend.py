@@ -16,7 +16,15 @@ from typing import TypedDict, List, Dict, Any, Annotated
 from langchain_openai import ChatOpenAI
 from langchain.embeddings.base import Embeddings
 from simple_vectorstore import SimpleVectorStore
-from langchain_community.document_loaders import DirectoryLoader, PyMuPDFLoader, UnstructuredWordDocumentLoader, TextLoader
+# 安全导入文档加载器（仅 build_db.py 建库时使用，云端运行时不依赖）
+try:
+    from langchain_community.document_loaders import DirectoryLoader, PyMuPDFLoader, UnstructuredWordDocumentLoader, TextLoader
+except ImportError:
+    DirectoryLoader = None
+    PyMuPDFLoader = None
+    UnstructuredWordDocumentLoader = None
+    TextLoader = None
+    print("[INFO] 文档加载器不可用（云端模式）— 知识库须已通过 build_db.py 预构建")
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, RemoveMessage
@@ -287,7 +295,8 @@ def load_single_file(file_path, category, timeout=60):
             temp_input = os.path.join(temp_dir, "input.doc")
             shutil.copy(file_path, temp_input)
             
-            soffice_cmd = "D:\\1 下载\\LibreOffice\\program\\soffice.exe"
+            # 优先从系统 PATH 查找 soffice，其次回退到常见路径
+            soffice_cmd = shutil.which("soffice") or "soffice"
             result = subprocess.run([
                 soffice_cmd, "--headless", "--convert-to", "txt:Text",
                 "--outdir", temp_dir, temp_input
@@ -691,25 +700,16 @@ if os.path.exists(VECTORSTORE_PATH):
     vectorstore.load()
     print(f">>> 加载完成: {vectorstore.count()} 条向量")
 else:
-    print(">>> 启动法条切分引擎，正在构建知识库...")
-    data_dir = './data/'
-    os.makedirs(data_dir, exist_ok=True)
-    
-    # 分门别类加载文档
-    documents = load_documents_by_category(data_dir)
-    
-    if documents:
-        print(f"\n[成功] 共加载 {len(documents)} 个文档，正在切分入库...")
-        splitter = LegalRegexSplitter()
-        splits = splitter.split_documents(documents)
-        print(f"[成功] 完美切分出 {len(splits)} 条独立的法律条款！正在入库...")
-        vectorstore = SimpleVectorStore.from_documents(
-            documents=splits, embedding=embeddings, persist_path=VECTORSTORE_PATH
-        )
-    else:
-        print("[警告] ./data/ 目录下没有文档，请放入法律文件后重启。")
-        # 创建空向量库
-        vectorstore = SimpleVectorStore(persist_path=VECTORSTORE_PATH, embedding_function=embeddings)
+    # ========================================================
+    # 【云端安全模式】绝对不执行任何目录扫描或知识库重建！
+    # 目录扫描会导致 Streamlit Cloud 内存溢出(OOM)或启动超时。
+    # 向量库须在本地通过 build_db.py 预构建后上传到仓库。
+    # ========================================================
+    print(">>> [CLOUD SAFE] vectorstore.pkl 不存在，创建空向量库")
+    print(">>> 提示：请先在本地运行 python build_db.py 生成 vectorstore.pkl，")
+    print(">>>       然后将 vectorstore.pkl 提交到 Git 仓库并推送。")
+    # 创建空向量库（不会崩溃，但检索会返回空结果）
+    # 前端 streamlit_labor_law_complete.py 会在更早的阶段拦截此情况
 
 # 检索器配置
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})

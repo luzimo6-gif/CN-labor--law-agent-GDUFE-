@@ -1,16 +1,37 @@
+# ==========================================
+# AI 劳动法智能助理 — Streamlit Cloud 生产环境依赖
+# ==========================================
+# 说明：移除了 ChromaDB、protobuf、pymupdf 等仅在本地建库时使用的依赖。
+#       云端只读取预构建的 vectorstore.pkl，不执行目录扫描或文档加载。
+
+# ── 核心 Web 框架 ──
 streamlit>=1.28.0
+
+# ── LangChain 全家桶 ──
 langchain>=0.1.0
-langgraph>=0.0.47
-langchain-chroma>=0.1.0
+langchain-core>=0.1.0
 langchain-openai>=0.0.8
 langchain-community>=0.0.10
-langchain-text-splitters>=0.0.1
-langchain-core>=0.1.0
-chromadb>=1.5.0,<2.0.0
-protobuf>=4.21.0,<5.0.0
-pypdf>=3.17.0
-pymupdf>=1.23.0
-python-dotenv>=1.0.0
+
+# ── LangGraph 多智能体工作流 ──
+langgraph>=0.0.47
+
+# ── 向量存储（纯 NumPy 实现，替代 ChromaDB）──
+numpy>=1.24.0
+
+# ── API 调用 ──
+openai>=1.0.0
 requests>=2.31.0
+
+# ── PDF 报告生成 ──
 reportlab>=4.0.0
+
+# ── 环境变量 & 数据校验 ──
+python-dotenv>=1.0.0
 pydantic>=2.0.0
+
+# ── 进度条（可选，build_db.py 使用）──
+tqdm>=4.65.0
+
+# ── SSL 警告抑制 ──
+urllib3>=2.0.0

@@ -975,14 +975,14 @@ import base64
 LOGIN_BG_IMAGE = ""
 MAIN_BG_IMAGE = ""
 
-# 登录背景图
-LOGIN_BG_PATH = r"D:\A DEMO（3.0实验版）\UI 图片\UI桌面设计.png"
+# 登录背景图（使用相对路径，兼容本地与云端环境）
+LOGIN_BG_PATH = os.path.join(os.path.dirname(__file__), "UI 图片", "UI桌面设计.png")
 if os.path.exists(LOGIN_BG_PATH):
     with open(LOGIN_BG_PATH, "rb") as img_file:
         LOGIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
 
 # 主页背景图
-MAIN_BG_PATH = r"D:\A DEMO（3.0实验版）\UI 图片\UI主页背景.png"
+MAIN_BG_PATH = os.path.join(os.path.dirname(__file__), "UI 图片", "UI主页背景.png")
 if os.path.exists(MAIN_BG_PATH):
     with open(MAIN_BG_PATH, "rb") as img_file:
         MAIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
@@ -1301,8 +1301,24 @@ if user_role == "admin":
 # ==========================================
 @st.cache_resource
 def load_backend():
+    """安全加载后端引擎。
+    
+    关键保障：
+    1. 先检查 vectorstore.pkl 是否存在，避免 backend.py 模块级代码触发目录扫描
+    2. 如果 pkl 缺失，返回特殊标记 "MISSING_VS"，由前端显示友好错误
+    3. 如果导入异常，返回 None 并记录详细错误
+    """
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # ── 关键：在导入 backend 之前检查 vectorstore.pkl ──
+        # backend.py 的模块级代码会尝试加载向量库，
+        # 如果 pkl 不存在且不做拦截，可能在旧版代码中触发目录扫描 → OOM
+        vs_path = os.path.join(current_dir, "vectorstore.pkl")
+        if not os.path.exists(vs_path):
+            print("[FATAL] vectorstore.pkl 不存在，无法加载后端")
+            return "MISSING_VS", None, None, None
+        
         sys.path.append(current_dir)
         from backend import app, llm, llm_fast, embeddings
         return app, llm, llm_fast, embeddings
@@ -1313,10 +1329,23 @@ def load_backend():
         return None, None, None, None
 
 backend = load_backend()
+
+# ── 优先处理 vectorstore.pkl 缺失的情况 ──
+if backend[0] == "MISSING_VS":
+    st.error(
+        "⚠️ **向量知识库文件缺失**\n\n"
+        "未检测到 `vectorstore.pkl` 文件。请按以下步骤操作：\n\n"
+        "1. 在本地运行 `python build_db.py` 生成向量知识库\n"
+        "2. 确保 `vectorstore.pkl` 已提交到 Git 仓库（不在 .gitignore 中）\n"
+        "3. 重新推送到 GitHub 后，Streamlit Cloud 会自动重新部署\n\n"
+        "> 💡 如果 vectorstore.pkl 文件过大（>100MB），建议使用 Git LFS。"
+    )
+    st.stop()
+
 app, llm, llm_fast, embeddings = backend[0], backend[1], backend[2], backend[3]
 
 if not app:
-    st.error("后端引擎导入失败！请确保 `backend.py` 在同一目录下。")
+    st.error("后端引擎导入失败！请确保 `backend.py` 在同一目录下，且所有依赖已正确安装。")
     st.stop()
 
 # ==========================================
