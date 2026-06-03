@@ -1,0 +1,25 @@
+<html>
+<head>
+</head>
+ <body>
+ <div class="hanweb-modal">
+                        <div class="hanweb-modal-content">
+                          抱歉，您无权限下载！
+                        </div>
+                      </div>
+                      <style>
+                      .hanweb-modal {
+                        width: 454px;
+                        background: #ffffff;
+                        border: 1px solid #D9D9D9;
+                        margin: 100px auto;
+                      }
+                      .hanweb-modal-content {
+                        padding: 20px 75px;
+                        font-size: 20px;
+                        text-align: center;
+                        color: gray;
+                      }
+                      </style></body>
+ </html>
+ 

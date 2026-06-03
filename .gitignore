@@ -3,6 +3,7 @@
 .env.local
 .env.production
 users.json
+.streamlit/secrets.toml
 
 # === Python 缓存 ===
 __pycache__/
@@ -38,3 +39,10 @@ uv.lock
 # === 日志和临时文件 ===
 *.log
 tmp/
+error.txt
+
+# === 大型二进制文件 ===
+vectorstore.pkl
+
+# === UI 临时文件 ===
+login_bg.png
