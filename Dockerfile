@@ -24,9 +24,8 @@ WORKDIR /app
 COPY backend_requirements.txt .
 RUN pip install --no-cache-dir -r backend_requirements.txt
 
-# ---- 拷贝应用代码与数据 ----
+# ---- 拷贝应用代码（向量数据已存于 Pinecone 云端，无需 PDF）----
 COPY api.py .
-COPY data/ ./data/
 
 # ---- 创建非 root 用户（安全最佳实践）----
 RUN useradd --create-home --shell /bin/bash appuser && \
