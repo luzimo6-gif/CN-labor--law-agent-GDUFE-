@@ -7,15 +7,8 @@
 
 FROM python:3.10-slim
 
-# ---- 系统依赖（pymupdf 需要）----
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+
+
 
 # ---- 工作目录 ----
 WORKDIR /app
