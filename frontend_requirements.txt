@@ -1,0 +1,21 @@
+# ============================================
+# 劳动法智能助理 - Streamlit 前端依赖
+# ============================================
+# 安装: pip install -r frontend_requirements.txt
+# 适用于 Streamlit Community Cloud 部署（极低内存占用）
+# 注意：此文件不包含 langchain/langgraph/chromadb 等后端库
+
+# ---- Web 框架 ----
+streamlit>=1.56.0
+
+# ---- HTTP 请求 ----
+requests>=2.31.0
+
+# ---- 环境变量 ----
+python-dotenv>=1.0.0
+
+# ---- PDF 生成 ----
+reportlab>=4.0.0
+
+# ---- HTTP 工具 ----
+urllib3>=2.0.0

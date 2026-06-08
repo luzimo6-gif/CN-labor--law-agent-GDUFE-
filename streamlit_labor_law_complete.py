@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
 """
-劳动法智能助理 
+劳动法智能助理 - Streamlit 前端（纯 UI 层）
 开发者：罗志远 广东财经大学人工智能法研究中心研究人员
 联系方式：1452723426@qq.com
+
+注意：本文件是纯前端 UI，所有 AI 推理逻辑已迁移至 FastAPI 后端 (api.py)。
+      前端通过 HTTP 调用 POST /chat 和 POST /analyze 接口与后端通信。
 """
 
 import os
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 import streamlit as st
-import sys
-import os
 import uuid
 import re
 import json
 import hashlib
 import urllib3
 import warnings
+import requests
 from datetime import datetime
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore", module="urllib3")
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+# ==========================================
+# API 后端地址（部署到 Streamlit Cloud 时改为生产地址）
+# ==========================================
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+_VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() == "true"
 
 # ==========================================
 # 0. 页面与全局高级样式配置 (终极律政视觉版)
@@ -975,14 +982,15 @@ import base64
 LOGIN_BG_IMAGE = ""
 MAIN_BG_IMAGE = ""
 
-# 登录背景图（使用相对路径，兼容本地与云端环境）
-LOGIN_BG_PATH = os.path.join(os.path.dirname(__file__), "UI 图片", "UI桌面设计.png")
+# 登录背景图
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGIN_BG_PATH = os.path.join(_SCRIPT_DIR, "UI 图片", "UI桌面设计.png")
 if os.path.exists(LOGIN_BG_PATH):
     with open(LOGIN_BG_PATH, "rb") as img_file:
         LOGIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
 
 # 主页背景图
-MAIN_BG_PATH = os.path.join(os.path.dirname(__file__), "UI 图片", "UI主页背景.png")
+MAIN_BG_PATH = os.path.join(_SCRIPT_DIR, "UI 图片", "UI主页背景.png")
 if os.path.exists(MAIN_BG_PATH):
     with open(MAIN_BG_PATH, "rb") as img_file:
         MAIN_BG_IMAGE = f"data:image/png;base64,{base64.b64encode(img_file.read()).decode()}"
@@ -1297,65 +1305,33 @@ if user_role == "admin":
                             st.rerun()
 
 # ==========================================
-# 1. 导入 LangGraph 后端与 LLM
+# 1. 后端 API 连通性检查
 # ==========================================
-@st.cache_resource
-def load_backend():
-    """安全加载后端引擎。
-    
-    关键保障：
-    1. 先检查 vectorstore.pkl 是否存在，避免 backend.py 模块级代码触发目录扫描
-    2. 如果 pkl 缺失，返回特殊标记 "MISSING_VS"，由前端显示友好错误
-    3. 如果导入异常，返回 None 并记录详细错误
-    """
+@st.cache_resource(ttl=30)
+def check_backend():
+    """检查后端 API 是否可达"""
     try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # ── 关键：在导入 backend 之前检查 vectorstore.pkl ──
-        # backend.py 的模块级代码会尝试加载向量库，
-        # 如果 pkl 不存在且不做拦截，可能在旧版代码中触发目录扫描 → OOM
-        vs_path = os.path.join(current_dir, "vectorstore.pkl")
-        if not os.path.exists(vs_path):
-            print("[FATAL] vectorstore.pkl 不存在，无法加载后端")
-            return "MISSING_VS", None, None, None
-        
-        sys.path.append(current_dir)
-        from backend import app, llm, llm_fast, embeddings
-        return app, llm, llm_fast, embeddings
+        resp = requests.get(f"{API_BASE_URL}/health", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return True, data.get("components", {})
+        return False, {}
     except Exception as e:
-        print(f"[FATAL] 后端引擎导入失败: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-        return None, None, None, None
+        return False, {"error": str(e)}
 
-backend = load_backend()
-
-# ── 优先处理 vectorstore.pkl 缺失的情况 ──
-if backend[0] == "MISSING_VS":
-    st.error(
-        "⚠️ **向量知识库文件缺失**\n\n"
-        "未检测到 `vectorstore.pkl` 文件。请按以下步骤操作：\n\n"
-        "1. 在本地运行 `python build_db.py` 生成向量知识库\n"
-        "2. 确保 `vectorstore.pkl` 已提交到 Git 仓库（不在 .gitignore 中）\n"
-        "3. 重新推送到 GitHub 后，Streamlit Cloud 会自动重新部署\n\n"
-        "> 💡 如果 vectorstore.pkl 文件过大（>100MB），建议使用 Git LFS。"
-    )
-    st.stop()
-
-app, llm, llm_fast, embeddings = backend[0], backend[1], backend[2], backend[3]
-
-if not app:
-    st.error("后端引擎导入失败！请确保 `backend.py` 在同一目录下，且所有依赖已正确安装。")
-    st.stop()
+backend_ok, backend_info = check_backend()
+if not backend_ok:
+    st.warning(f"⚠️ 后端服务未连接 ({API_BASE_URL})。请先启动 `python api.py`。")
+else:
+    st.sidebar.success(f"🟢 后端已连接 ({API_BASE_URL})")
 
 # ==========================================
-# 2. 状态初始化
+# 2. 状态初始化（消息存储为纯字典，无 langchain 对象）
 # ==========================================
 if 'thread_id' not in st.session_state:
-    current_usr = st.session_state.get("current_user", "guest")
-    st.session_state.thread_id = f"case_{current_usr}_{uuid.uuid4().hex[:6]}"
+    st.session_state.thread_id = f"user-{uuid.uuid4().hex[:8]}"
 if 'messages' not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = []  # 每个元素: {"role": "user"/"assistant", "content": "..."}
 if 'form_data' not in st.session_state:
     st.session_state.form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
 if 'analysis_result' not in st.session_state:
@@ -1439,36 +1415,6 @@ def parse_ai_message(text):
     output = re.sub(r'</?(?:thinking|output|system|instruction)\b[^>]*>', '', output)
 
     return thinking, output
-
-def extract_info_silently(chat_history, current_data):
-    """Context 工程：静默提取信息到右侧卷宗，扩大提取范围"""
-    if not chat_history: return current_data
-    
-    # 只看最近4条用户消息（提速），因为之前的已经被提取过了
-    recent_user_msgs = [m for m in chat_history[-6:] if isinstance(m, HumanMessage)]
-    if not recent_user_msgs: return current_data
-    
-    prompt = f"""你是一个后台数据提取器。请从【用户消息】中提取关键信息并更新【当前数据】。
-    没提到的保持空字符串 ""。
-    
-    ⚠️ 提取规则：
-    1. 案件发生地：提取具体的城市或省份名称
-    2. 单位名称：提取公司/单位全称
-    3. 平均月薪：提取具体数字
-    4. 时间节点：提取关键时间点
-    5. 核心诉求：简练概括用户想要什么
-    6. 详细经过：整理为150字以内摘要
-    
-    【当前数据】：{json.dumps(current_data, ensure_ascii=False)}
-    【用户消息】：{[m.content for m in recent_user_msgs[-3:]]}
-    请严格返回包含这6个键的JSON："案件发生地", "单位名称", "平均月薪", "时间节点", "核心诉求", "详细经过"。"""
-    try:
-        response = llm_fast.invoke([SystemMessage(content="只输出合法JSON"), HumanMessage(content=prompt)])
-        clean_json = response.content.replace('```json', '').replace('```', '').strip()
-        new_data = json.loads(clean_json)
-        return {k: new_data.get(k) if new_data.get(k) else current_data.get(k, "") for k in current_data.keys()}
-    except Exception:
-        return current_data
 
 def evaluate_form_completeness(form_data):
     """Context 工程：评估卷宗信息完善度，返回完善百分比和建议"""
@@ -1720,8 +1666,7 @@ with st.sidebar:
         st.rerun()
         
     if st.button("🔄 彻底重置并开启新案", type="primary", use_container_width=True):
-        current_usr = st.session_state.get("current_user", "guest")
-        st.session_state.thread_id = f"case_{current_usr}_{uuid.uuid4().hex[:6]}"
+        st.session_state.thread_id = f"user-{uuid.uuid4().hex[:8]}"
         st.session_state.messages = []
         st.session_state.form_data = {"案件发生地": "", "单位名称": "", "平均月薪": "", "时间节点": "", "核心诉求": "", "详细经过": ""}
         st.session_state.analysis_result = None
@@ -1752,10 +1697,6 @@ if MAIN_BG_IMAGE:
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 5.1 AI咨询主页面
-# ==========================================
-
 st.markdown('<h1 class="chat-title">AI 劳动法</h1>', unsafe_allow_html=True)
 st.markdown('<p class="chat-subtitle">左侧沟通案情，右侧智能建档。生成报告后对话将自动销毁。</p>', unsafe_allow_html=True)
 
@@ -1784,10 +1725,10 @@ with col_chat:
 
         # 渲染历史聊天 (搭载豆包式思考折叠)
         for msg in st.session_state.messages:
-            role = "user" if isinstance(msg, HumanMessage) else "assistant"
+            role = msg["role"]
             with st.chat_message(role):
                 if role == "assistant":
-                    thinking, output = parse_ai_message(msg.content)
+                    thinking, output = parse_ai_message(msg["content"])
                     if thinking:
                         # 历史消息中的思考默认折叠
                         with st.expander("✅ 已完成思考", expanded=False):
@@ -1795,7 +1736,7 @@ with col_chat:
                     if output:
                         st.markdown(output)
                 else:
-                    st.write(msg.content)
+                    st.write(msg["content"])
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -1823,93 +1764,84 @@ with col_chat:
                 st.file_uploader("上传劳动合同、打卡记录等", type=["pdf", "png", "jpg"], accept_multiple_files=True)
                 st.caption("视觉解析能力即将上线...")
 
-        # 聊天输入框及提交逻辑
+        # 聊天输入框及提交逻辑 (通过 API 调用后端)
         if prompt := st.chat_input("描述您的遭遇或提出疑问...", key="main_chat_input"):
             
-            # 1. 前端 UI 展示用户的原话
-            user_msg_ui = HumanMessage(content=prompt)
-            st.session_state.messages.append(user_msg_ui)
-            
+            # 1. 展示用户消息
+            st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
-                
+
             with st.chat_message("assistant"):
-                # 1. 明确分离两个占位容器：思考状态框 + 正文框
                 thinking_status = st.status("⚖️ AI 正在思考推演...", expanded=False)
                 thinking_placeholder = thinking_status.empty()
                 response_placeholder = st.empty()
-                
-                config = {"configurable": {"thread_id": st.session_state.thread_id}}
-                
-                # 🌟 2. 前端静默注入黑科技
+
+                # 🌟 普法模式下，前端注入系统指令
                 if st.session_state.ai_mode == "QUICK":
-                    injected_prompt = f"【系统前置绝对指令：当前处于快速普法模式。请直接以专业律师口吻回答该问题，绝对不要试图收集案卷要素，也不要提示用户看右侧表单。】\n用户：{prompt}"
-                    backend_msg = HumanMessage(content=injected_prompt)
+                    final_query = f"【系统前置绝对指令：当前处于快速普法模式。请直接以专业律师口吻回答该问题，绝对不要试图收集案卷要素，也不要提示用户看右侧表单。】\n用户：{prompt}"
                 else:
-                    backend_msg = user_msg_ui
-                
-                full_response = ""
+                    final_query = prompt
+
+                # 调用后端 POST /chat
+                reply_text = ""
+                action = "chat"
                 thinking_text = ""
-                
                 try:
-                    # 使用流式调用
-                    for event in app.stream({"messages": [backend_msg]}, config, stream_mode="messages"):
-                        if isinstance(event, tuple):
-                            msg, _ = event
-                        else:
-                            msg = event
+                    resp = requests.post(
+                        f"{API_BASE_URL}/chat",
+                        json={
+                            "query": final_query,
+                            "thread_id": st.session_state.thread_id,
+                        },
+                        timeout=90,
+                        verify=_VERIFY_SSL,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        reply_text = data.get("reply", "")
+                        action = data.get("action", "chat")
+                        thinking_text = data.get("thinking", "")
                         
-                        if hasattr(msg, 'content') and msg.content:
-                            full_response += msg.content
-                            thinking_text, clean_response = parse_ai_message(full_response)
-                            
-                            # 动态更新思考框
-                            if thinking_text:
-                                thinking_placeholder.markdown(thinking_text)
-                            
-                            # 动态更新外部的正文框
-                            if clean_response:
-                                response_placeholder.markdown(clean_response)
-                    
-                    # 流式结束后，关闭思考状态框
-                    thinking_status.update(label="✅ 已完成思考", state="complete", expanded=False)
-                    
-                    # 保存完整消息（包含thinking）
-                    if full_response.strip():
-                        ai_msg = AIMessage(content=full_response.strip())
-                        st.session_state.messages.append(ai_msg)
-                
+                        # 展示思考过程
+                        if thinking_text:
+                            thinking_placeholder.markdown(thinking_text)
+                        # 展示回复
+                        if reply_text:
+                            response_placeholder.markdown(reply_text)
+                        
+                        thinking_status.update(label="✅ 已完成思考", state="complete", expanded=False)
+                    else:
+                        raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
                 except Exception as e:
                     import traceback
-                    print(f"[ERROR] 聊天流式调用失败: {type(e).__name__}: {e}")
+                    print(f"[ERROR] API 调用失败: {type(e).__name__}: {e}")
                     traceback.print_exc()
                     thinking_status.update(label="⚠️ 出错了", state="error", expanded=False)
-                    err_msg = "抱歉，服务暂时不可用，请稍后再试。"
-                    response_placeholder.markdown(err_msg)
-                    st.session_state.messages.append(AIMessage(content=err_msg))
-                
-                # 3. 只有 PRO 模式才会触发右侧卷宗系统的联动
+                    reply_text = f"抱歉，后端服务暂时不可用。请确保已启动 `python api.py`。\n> 错误: {type(e).__name__}"
+                    response_placeholder.markdown(reply_text)
+                    action = "chat"
+
+                # 保存 AI 消息
+                full_content = reply_text
+                if thinking_text and thinking_text not in full_content:
+                    full_content = f"<thinking>{thinking_text}</thinking>\n{reply_text}"
+                st.session_state.messages.append({"role": "assistant", "content": full_content.strip()})
+
+                # PRO 模式下判断是否触发分析
                 if st.session_state.ai_mode == "PRO":
-                    # Context 工程：对话轮数计数
                     st.session_state.context_round_count += 1
                     round_count = st.session_state.context_round_count
-                    
-                    # 获取最终状态
-                    final_state = app.get_state(config)
-                    action = final_state.values.get("triage_result", {}).get("action", "chat")
-                    
-                    # 触发静默提取，自动填写右侧表格
-                    updated_data = extract_info_silently(st.session_state.messages, st.session_state.form_data)
-                    st.session_state.form_data = updated_data
-                    
-                    # Context 工程：评估信息完善度
-                    completeness_pct, missing_fields, suggestion = evaluate_form_completeness(st.session_state.form_data)
-                    
-                    # 判断是否收集完毕（三重判断：AI 判断 + 完善度 + 轮数）
+
+                    # 评估信息完善度
+                    completeness_pct, missing_fields, suggestion = evaluate_form_completeness(
+                        st.session_state.form_data
+                    )
+
                     ai_says_ready = action == "form"
                     data_says_ready = completeness_pct >= 60
-                    rounds_exceeded = round_count >= 10  # 超过10轮强制提示
-                    
+                    rounds_exceeded = round_count >= 10
+
                     if ai_says_ready or data_says_ready:
                         st.session_state.ready_for_analysis = True
                         st.toast("🎯 核心信息已收集完毕！请查看右侧面板并生成报告。", icon="✅")
@@ -1918,13 +1850,11 @@ with col_chat:
                         st.toast(f"⏰ 已对话 {round_count} 轮，信息完善度 {completeness_pct}%。建议生成报告。", icon="📋")
                     else:
                         st.session_state.ready_for_analysis = False
-                        # 每5轮对话提示一下完善度
                         if round_count % 5 == 0 and round_count > 0:
                             st.toast(f"📊 已对话 {round_count} 轮，信息完善度 {completeness_pct}%。{suggestion}", icon="💡")
                 else:
-                    # 快速模式下，永远不提示收集完毕
                     st.session_state.ready_for_analysis = False
-                    
+
             st.rerun()
 
 # ------------------------------------------
@@ -1982,72 +1912,46 @@ if col_panel is not None:
                         }
                         st.session_state.form_data = final_form
                         
-                        # 节点中文名映射
-                        node_labels = {
-                            "fact_summarizer": "📋 事实梳理员",
-                            "legal_researcher": "📚 法条检索专员",
-                            "compliance_reviewer": "⚖️ 合规审核员",
-                            "quality_inspector": "🔍 主编质检员",
-                        }
+                        is_force = not st.session_state.ready_for_analysis
                         
-                        with st.status("⚖️ 多智能体正在后台推演案情...", expanded=True) as status:
-                            config = {"configurable": {"thread_id": st.session_state.thread_id}}
-                            
-                            # 检查当前 LangGraph 状态
+                        with st.status("⚖️ 正在调用 AI 多智能体分析案情...", expanded=True) as status_ctx:
+                            st.write("🚀 分析请求已发送至后端...")
+
                             try:
-                                current_state = app.get_state(config)
-                                next_steps = current_state.next if hasattr(current_state, 'next') else []
-                            except:
-                                next_steps = []
-                            
-                            use_direct = not (next_steps and 'fact_summarizer' in next_steps)
-                            
-                            if not use_direct:
-                                # 正常流程：已通过 triage，从中断点恢复
-                                app.update_state(config, {"form_data": final_form})
-                                active_config = config
-                            else:
-                                # 强制生成：直接启动完整分析流程
-                                from langchain_core.messages import HumanMessage, SystemMessage
-                                case_msg = HumanMessage(content=f"请分析以下劳动法案件：\n" + "\n".join([f"{k}：{v}" for k, v in final_form.items() if v]))
-                                new_thread = st.session_state.thread_id + "_direct"
-                                active_config = {"configurable": {"thread_id": new_thread}}
-                                # 先触发 triage 走到 interrupt_before
-                                init_result = app.invoke({"messages": [case_msg], "form_data": final_form}, active_config)
-                                triage_res = init_result.get("triage_result", {}) if isinstance(init_result, dict) else {}
-                                if triage_res.get("action") != "form":
-                                    app.update_state(active_config, {"triage_result": {"action": "form", "category": "强制案件分析", "reply": "开始分析"}})
-                                app.update_state(active_config, {"form_data": final_form})
-                            
-                            # 🌟 LangGraph 流式输出
-                            st.write("🚀 分析流水线已启动...")
-                            completed_nodes = set()
-                            
-                            try:
-                                for event in app.stream(None, active_config):
-                                    # event 格式: {node_name: output_dict}
-                                    if isinstance(event, dict):
-                                        for node_name in event.keys():
-                                            if node_name not in completed_nodes and node_name != "summarizer" and node_name != "triage":
-                                                label = node_labels.get(node_name, node_name)
-                                                st.write(f"✅ {label} 已完成工作")
-                                                completed_nodes.add(node_name)
+                                resp = requests.post(
+                                    f"{API_BASE_URL}/analyze",
+                                    json={
+                                        "thread_id": st.session_state.thread_id,
+                                        "form_data": final_form,
+                                        "force": is_force,
+                                    },
+                                    timeout=180,  # 完整分析可能需要 1-3 分钟
+                                    verify=_VERIFY_SSL,
+                                )
+                                if resp.status_code == 200:
+                                    data = resp.json()
+                                    analysis = {
+                                        "legal_facts_summary": data.get("legal_facts_summary", ""),
+                                        "relevant_laws": data.get("relevant_laws", ""),
+                                        "final_review": data.get("final_review", ""),
+                                    }
+                                    status_ctx.update(
+                                        label="✅ 深度分析完成！",
+                                        state="complete",
+                                        expanded=False
+                                    )
+                                else:
+                                    raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
                             except Exception as e:
-                                st.write(f"⚠️ 流式输出中断: {e}")
-                            
-                            # 获取最终状态
-                            try:
-                                final_state = app.get_state(active_config)
-                                state_values = final_state.values if hasattr(final_state, 'values') else {}
+                                import traceback
+                                traceback.print_exc()
+                                status_ctx.update(label="⚠️ 分析失败", state="error", expanded=True)
+                                st.error(f"后端分析失败: {e}")
                                 analysis = {
-                                    "legal_facts_summary": state_values.get("legal_facts_summary", ""),
-                                    "relevant_laws": state_values.get("relevant_laws", ""),
-                                    "final_review": state_values.get("final_review", ""),
+                                    "legal_facts_summary": f"分析出错: {e}",
+                                    "relevant_laws": "",
+                                    "final_review": "",
                                 }
-                            except Exception:
-                                analysis = {"legal_facts_summary": "分析完成", "relevant_laws": "", "final_review": ""}
-                            
-                            status.update(label="✅ 深度分析完成！", state="complete", expanded=False)
                         
                         st.session_state.analysis_result = analysis
                         st.session_state.messages = [] 

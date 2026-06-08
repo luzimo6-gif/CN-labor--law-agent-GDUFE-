@@ -1,0 +1,39 @@
+# ============================================
+# 劳动法智能助理 - 后端服务依赖
+# ============================================
+# 安装: pip install -r backend_requirements.txt
+# 注意：此文件不包含 streamlit，仅用于 FastAPI 后端
+
+# ---- Web 框架 ----
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# ---- 环境变量 ----
+python-dotenv>=1.0.0
+
+# ---- LLM 客户端 ----
+openai>=1.0.0
+
+# ---- LangChain 核心 ----
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-openai>=0.0.8
+langchain-community>=0.0.10
+
+# ---- LangGraph 多智能体 ----
+langgraph>=0.0.47
+
+# ---- 云向量库: Pinecone ----
+langchain-pinecone>=0.1.0
+pinecone-client>=3.0.0
+
+# ---- Embeddings: DashScope ----
+dashscope>=1.19.0
+
+# ---- 文档处理 ----
+pymupdf>=1.23.0
+
+# ---- HTTP & 工具 ----
+requests>=2.31.0
+pydantic>=2.0.0
+urllib3>=2.0.0
