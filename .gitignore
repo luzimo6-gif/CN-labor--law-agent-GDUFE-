@@ -42,6 +42,10 @@ uv.lock
 tmp/
 error.txt
 
+# === 源数据文件（已灌入 Pinecone，无需上传） ===
+data/
+*.pdf
+
 # === 大型二进制文件 ===
 # vectorstore.pkl  # ⚠️ 已放行：云端部署需要此文件，必须提交到 Git 仓库
 # 如果文件 >100MB，请使用 Git LFS（Large File Storage）管理
